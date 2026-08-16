@@ -3,3 +3,5 @@ dist/
 android/
 .DS_Store
 *.log
+.env
+.env.local

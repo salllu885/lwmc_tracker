@@ -21,6 +21,10 @@ jobs:
         run: npm install
 
       - name: Build web app
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SYNTHETIC_EMAIL_DOMAIN: ${{ secrets.VITE_SYNTHETIC_EMAIL_DOMAIN }}
         run: npm run build
 
       - name: Add Android platform
