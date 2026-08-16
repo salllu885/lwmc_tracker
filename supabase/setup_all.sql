@@ -1,4 +1,4 @@
--- Combined setup script: run this once in the Supabase SQL Editor.
+-- Combined setup script: safe to paste and run more than once.
 -- (Same as running 0001, 0002, 0003, 0004, then seed.sql in order.)
 
 -- Field Issue Reporting & Rectification Management System
@@ -7,20 +7,27 @@
 create extension if not exists pgcrypto;
 
 -- ── Enums ────────────────────────────────────────────────────────────────
+-- Postgres has no `create type if not exists`, so these are guarded by
+-- hand — safe to run this whole script more than once.
 
-create type app_role as enum (
-  'ADMIN', 'SURVEYER', 'SUPERVISOR', 'ZO', 'MANAGER', 'GM', 'AC'
-);
+do $$ begin
+  create type app_role as enum ('ADMIN', 'SURVEYER', 'SUPERVISOR', 'ZO', 'MANAGER', 'GM', 'AC');
+exception when duplicate_object then null;
+end $$;
 
-create type report_status as enum (
-  'SUBMITTED', 'PENDING', 'IN_PROGRESS', 'CLOSED', 'REOPENED'
-);
+do $$ begin
+  create type report_status as enum ('SUBMITTED', 'PENDING', 'IN_PROGRESS', 'CLOSED', 'REOPENED');
+exception when duplicate_object then null;
+end $$;
 
-create type report_image_type as enum ('BEFORE', 'RESOLUTION');
+do $$ begin
+  create type report_image_type as enum ('BEFORE', 'RESOLUTION');
+exception when duplicate_object then null;
+end $$;
 
 -- ── Organisational hierarchy ────────────────────────────────────────────
 
-create table public.tehsils (
+create table if not exists public.tehsils (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   code text unique,
@@ -28,16 +35,16 @@ create table public.tehsils (
   created_at timestamptz not null default now()
 );
 
-create table public.zones (
+create table if not exists public.zones (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   tehsil_id uuid not null references public.tehsils(id) on delete restrict,
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
-create index zones_tehsil_id_idx on public.zones(tehsil_id);
+create index if not exists zones_tehsil_id_idx on public.zones(tehsil_id);
 
-create table public.ucs (
+create table if not exists public.ucs (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   code text,
@@ -46,12 +53,12 @@ create table public.ucs (
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
-create index ucs_zone_id_idx on public.ucs(zone_id);
-create index ucs_tehsil_id_idx on public.ucs(tehsil_id);
+create index if not exists ucs_zone_id_idx on public.ucs(zone_id);
+create index if not exists ucs_tehsil_id_idx on public.ucs(tehsil_id);
 
 -- ── Issue taxonomy ───────────────────────────────────────────────────────
 
-create table public.issue_types (
+create table if not exists public.issue_types (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   description text,
@@ -64,7 +71,7 @@ create table public.issue_types (
 -- 1:1 with auth.users. Created via the admin-create-user Edge Function
 -- (or, for the very first Admin, directly in the Supabase dashboard).
 
-create table public.profiles (
+create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null,
   username text not null unique,
@@ -78,7 +85,7 @@ create table public.profiles (
 -- A user's assignment to a level of the hierarchy. Historical rows are kept
 -- (end_date/is_active) so past reports keep their original assignment
 -- snapshot even after someone's coverage area changes.
-create table public.user_assignments (
+create table if not exists public.user_assignments (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
   tehsil_id uuid references public.tehsils(id) on delete cascade,
@@ -89,16 +96,16 @@ create table public.user_assignments (
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
-create index user_assignments_user_id_idx on public.user_assignments(user_id);
-create index user_assignments_uc_id_idx on public.user_assignments(uc_id) where uc_id is not null;
-create index user_assignments_zone_id_idx on public.user_assignments(zone_id) where zone_id is not null;
-create index user_assignments_tehsil_id_idx on public.user_assignments(tehsil_id) where tehsil_id is not null;
+create index if not exists user_assignments_user_id_idx on public.user_assignments(user_id);
+create index if not exists user_assignments_uc_id_idx on public.user_assignments(uc_id) where uc_id is not null;
+create index if not exists user_assignments_zone_id_idx on public.user_assignments(zone_id) where zone_id is not null;
+create index if not exists user_assignments_tehsil_id_idx on public.user_assignments(tehsil_id) where tehsil_id is not null;
 
 -- ── Reports ──────────────────────────────────────────────────────────────
 
-create sequence public.report_number_seq;
+create sequence if not exists public.report_number_seq;
 
-create table public.reports (
+create table if not exists public.reports (
   id uuid primary key default gen_random_uuid(),
   report_number text unique,
   -- zone_id/tehsil_id are derived server-side from uc_id by a trigger
@@ -121,17 +128,17 @@ create table public.reports (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-create index reports_uc_id_idx on public.reports(uc_id);
-create index reports_zone_id_idx on public.reports(zone_id);
-create index reports_tehsil_id_idx on public.reports(tehsil_id);
-create index reports_reported_by_idx on public.reports(reported_by);
-create index reports_assigned_supervisor_idx on public.reports(assigned_supervisor_id);
-create index reports_assigned_zo_idx on public.reports(assigned_zo_id);
-create index reports_status_idx on public.reports(status);
-create index reports_issue_type_idx on public.reports(issue_type_id);
-create index reports_created_at_idx on public.reports(created_at desc);
+create index if not exists reports_uc_id_idx on public.reports(uc_id);
+create index if not exists reports_zone_id_idx on public.reports(zone_id);
+create index if not exists reports_tehsil_id_idx on public.reports(tehsil_id);
+create index if not exists reports_reported_by_idx on public.reports(reported_by);
+create index if not exists reports_assigned_supervisor_idx on public.reports(assigned_supervisor_id);
+create index if not exists reports_assigned_zo_idx on public.reports(assigned_zo_id);
+create index if not exists reports_status_idx on public.reports(status);
+create index if not exists reports_issue_type_idx on public.reports(issue_type_id);
+create index if not exists reports_created_at_idx on public.reports(created_at desc);
 
-create table public.report_images (
+create table if not exists public.report_images (
   id uuid primary key default gen_random_uuid(),
   report_id uuid not null references public.reports(id) on delete cascade,
   image_type report_image_type not null,
@@ -142,9 +149,9 @@ create table public.report_images (
   location_accuracy double precision,
   captured_at timestamptz not null default now()
 );
-create index report_images_report_id_idx on public.report_images(report_id);
+create index if not exists report_images_report_id_idx on public.report_images(report_id);
 
-create table public.resolutions (
+create table if not exists public.resolutions (
   id uuid primary key default gen_random_uuid(),
   report_id uuid not null unique references public.reports(id) on delete cascade,
   resolved_by uuid not null references public.profiles(id),
@@ -155,7 +162,7 @@ create table public.resolutions (
   resolved_at timestamptz not null default now()
 );
 
-create table public.audit_logs (
+create table if not exists public.audit_logs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references public.profiles(id),
   report_id uuid references public.reports(id) on delete cascade,
@@ -165,10 +172,10 @@ create table public.audit_logs (
   remarks text,
   created_at timestamptz not null default now()
 );
-create index audit_logs_report_id_idx on public.audit_logs(report_id);
-create index audit_logs_created_at_idx on public.audit_logs(created_at desc);
+create index if not exists audit_logs_report_id_idx on public.audit_logs(report_id);
+create index if not exists audit_logs_created_at_idx on public.audit_logs(created_at desc);
 
-create table public.notifications (
+create table if not exists public.notifications (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
   report_id uuid references public.reports(id) on delete cascade,
@@ -177,7 +184,7 @@ create table public.notifications (
   is_read boolean not null default false,
   created_at timestamptz not null default now()
 );
-create index notifications_user_id_idx on public.notifications(user_id, is_read);
+create index if not exists notifications_user_id_idx on public.notifications(user_id, is_read);
 
 -- 0002_rls: helper functions + Row Level Security policies
 --
@@ -271,25 +278,36 @@ alter table public.audit_logs enable row level security;
 alter table public.notifications enable row level security;
 
 -- ── Reference data: readable by everyone signed in, writable by Admin ──
+-- Every policy below is preceded by `drop policy if exists` so this whole
+-- script is safe to paste and run more than once.
 
+drop policy if exists tehsils_select on public.tehsils;
 create policy tehsils_select on public.tehsils for select to authenticated using (true);
+drop policy if exists tehsils_write on public.tehsils;
 create policy tehsils_write on public.tehsils for all to authenticated
   using (private.current_role() = 'ADMIN') with check (private.current_role() = 'ADMIN');
 
+drop policy if exists zones_select on public.zones;
 create policy zones_select on public.zones for select to authenticated using (true);
+drop policy if exists zones_write on public.zones;
 create policy zones_write on public.zones for all to authenticated
   using (private.current_role() = 'ADMIN') with check (private.current_role() = 'ADMIN');
 
+drop policy if exists ucs_select on public.ucs;
 create policy ucs_select on public.ucs for select to authenticated using (true);
+drop policy if exists ucs_write on public.ucs;
 create policy ucs_write on public.ucs for all to authenticated
   using (private.current_role() = 'ADMIN') with check (private.current_role() = 'ADMIN');
 
+drop policy if exists issue_types_select on public.issue_types;
 create policy issue_types_select on public.issue_types for select to authenticated using (true);
+drop policy if exists issue_types_write on public.issue_types;
 create policy issue_types_write on public.issue_types for all to authenticated
   using (private.current_role() = 'ADMIN') with check (private.current_role() = 'ADMIN');
 
 -- ── Profiles ─────────────────────────────────────────────────────────────
 
+drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles for select to authenticated using (
   id = auth.uid()
   or private.current_role() = 'ADMIN'
@@ -303,21 +321,26 @@ create policy profiles_select on public.profiles for select to authenticated usi
 -- Admin can do anything; everyone else may only touch their own row, and
 -- even then role/is_active/username are locked down by a trigger in
 -- 0003_triggers.sql (profiles_protect_privileged_fields).
+drop policy if exists profiles_write_admin on public.profiles;
 create policy profiles_write_admin on public.profiles for all to authenticated
   using (private.current_role() = 'ADMIN') with check (private.current_role() = 'ADMIN');
+drop policy if exists profiles_update_self on public.profiles;
 create policy profiles_update_self on public.profiles for update to authenticated
   using (id = auth.uid()) with check (id = auth.uid());
 
 -- ── User assignments ────────────────────────────────────────────────────
 
+drop policy if exists user_assignments_select on public.user_assignments;
 create policy user_assignments_select on public.user_assignments for select to authenticated using (
   user_id = auth.uid() or private.current_role() = 'ADMIN'
 );
+drop policy if exists user_assignments_write_admin on public.user_assignments;
 create policy user_assignments_write_admin on public.user_assignments for all to authenticated
   using (private.current_role() = 'ADMIN') with check (private.current_role() = 'ADMIN');
 
 -- ── Reports ──────────────────────────────────────────────────────────────
 
+drop policy if exists reports_select on public.reports;
 create policy reports_select on public.reports for select to authenticated using (
   private.current_role() = 'ADMIN'
   or (private.current_role() = 'SURVEYER' and reported_by = auth.uid())
@@ -331,6 +354,7 @@ create policy reports_select on public.reports for select to authenticated using
 );
 
 -- A Surveyer can only file a report for a UC they're actually assigned to.
+drop policy if exists reports_insert on public.reports;
 create policy reports_insert on public.reports for insert to authenticated with check (
   private.current_role() = 'ADMIN'
   or (private.current_role() = 'SURVEYER' and reported_by = auth.uid() and uc_id in (select private.assigned_uc_ids()))
@@ -339,6 +363,7 @@ create policy reports_insert on public.reports for insert to authenticated with 
 -- Only the responsible Supervisor/ZO (or Admin) can move a report through
 -- its lifecycle. No delete policy anywhere -> deletes are always denied for
 -- API callers.
+drop policy if exists reports_update on public.reports;
 create policy reports_update on public.reports for update to authenticated
   using (
     private.current_role() = 'ADMIN'
@@ -353,18 +378,22 @@ create policy reports_update on public.reports for update to authenticated
 
 -- ── Report images (immutable evidence: no update/delete policy) ────────
 
+drop policy if exists report_images_select on public.report_images;
 create policy report_images_select on public.report_images for select to authenticated using (
   private.can_view_report(report_id)
 );
+drop policy if exists report_images_insert on public.report_images;
 create policy report_images_insert on public.report_images for insert to authenticated with check (
   private.can_view_report(report_id) and uploaded_by = auth.uid()
 );
 
 -- ── Resolutions (immutable once filed: no update/delete policy) ────────
 
+drop policy if exists resolutions_select on public.resolutions;
 create policy resolutions_select on public.resolutions for select to authenticated using (
   private.can_view_report(report_id)
 );
+drop policy if exists resolutions_insert on public.resolutions;
 create policy resolutions_insert on public.resolutions for insert to authenticated with check (
   resolved_by = auth.uid()
   and (
@@ -378,6 +407,7 @@ create policy resolutions_insert on public.resolutions for insert to authenticat
 
 -- ── Audit logs (read-only to clients; only triggers may insert) ────────
 
+drop policy if exists audit_logs_select on public.audit_logs;
 create policy audit_logs_select on public.audit_logs for select to authenticated using (
   private.current_role() = 'ADMIN' or (report_id is not null and private.can_view_report(report_id))
 );
@@ -388,9 +418,11 @@ create policy audit_logs_select on public.audit_logs for select to authenticated
 
 -- ── Notifications ────────────────────────────────────────────────────────
 
+drop policy if exists notifications_select on public.notifications;
 create policy notifications_select on public.notifications for select to authenticated using (
   user_id = auth.uid() or private.current_role() = 'ADMIN'
 );
+drop policy if exists notifications_update_self on public.notifications;
 create policy notifications_update_self on public.notifications for update to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 -- No client insert policy — rows are written by triggers only.
@@ -408,11 +440,11 @@ begin
 end;
 $$;
 
-create trigger reports_set_updated_at
+create or replace trigger reports_set_updated_at
 before update on public.reports
 for each row execute function public.set_updated_at();
 
-create trigger profiles_set_updated_at
+create or replace trigger profiles_set_updated_at
 before update on public.profiles
 for each row execute function public.set_updated_at();
 
@@ -474,7 +506,7 @@ begin
 end;
 $$;
 
-create trigger reports_before_insert_trigger
+create or replace trigger reports_before_insert_trigger
 before insert on public.reports
 for each row execute function public.reports_before_insert();
 
@@ -499,7 +531,7 @@ begin
 end;
 $$;
 
-create trigger reports_after_insert_trigger
+create or replace trigger reports_after_insert_trigger
 after insert on public.reports
 for each row execute function public.reports_after_insert();
 
@@ -526,7 +558,7 @@ begin
 end;
 $$;
 
-create trigger reports_after_update_trigger
+create or replace trigger reports_after_update_trigger
 after update on public.reports
 for each row execute function public.reports_after_update();
 
@@ -540,7 +572,7 @@ begin
 end;
 $$;
 
-create trigger resolutions_after_insert_trigger
+create or replace trigger resolutions_after_insert_trigger
 after insert on public.resolutions
 for each row execute function public.resolutions_after_insert();
 
@@ -563,7 +595,7 @@ begin
 end;
 $$;
 
-create trigger profiles_protect_privileged_fields_trigger
+create or replace trigger profiles_protect_privileged_fields_trigger
 before update on public.profiles
 for each row execute function public.profiles_protect_privileged_fields();
 
@@ -593,7 +625,7 @@ begin
 end;
 $$;
 
-create trigger user_assignments_validate_trigger
+create or replace trigger user_assignments_validate_trigger
 before insert or update on public.user_assignments
 for each row execute function public.validate_user_assignment();
 
@@ -608,11 +640,13 @@ insert into storage.buckets (id, name, public)
 values ('report-photos', 'report-photos', false)
 on conflict (id) do nothing;
 
+drop policy if exists report_photos_select on storage.objects;
 create policy report_photos_select on storage.objects for select to authenticated using (
   bucket_id = 'report-photos'
   and private.can_view_report((split_part(name, '/', 1))::uuid)
 );
 
+drop policy if exists report_photos_insert on storage.objects;
 create policy report_photos_insert on storage.objects for insert to authenticated with check (
   bucket_id = 'report-photos'
   and private.can_view_report((split_part(name, '/', 1))::uuid)

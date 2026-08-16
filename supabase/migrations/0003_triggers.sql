@@ -11,11 +11,11 @@ begin
 end;
 $$;
 
-create trigger reports_set_updated_at
+create or replace trigger reports_set_updated_at
 before update on public.reports
 for each row execute function public.set_updated_at();
 
-create trigger profiles_set_updated_at
+create or replace trigger profiles_set_updated_at
 before update on public.profiles
 for each row execute function public.set_updated_at();
 
@@ -77,7 +77,7 @@ begin
 end;
 $$;
 
-create trigger reports_before_insert_trigger
+create or replace trigger reports_before_insert_trigger
 before insert on public.reports
 for each row execute function public.reports_before_insert();
 
@@ -102,7 +102,7 @@ begin
 end;
 $$;
 
-create trigger reports_after_insert_trigger
+create or replace trigger reports_after_insert_trigger
 after insert on public.reports
 for each row execute function public.reports_after_insert();
 
@@ -129,7 +129,7 @@ begin
 end;
 $$;
 
-create trigger reports_after_update_trigger
+create or replace trigger reports_after_update_trigger
 after update on public.reports
 for each row execute function public.reports_after_update();
 
@@ -143,7 +143,7 @@ begin
 end;
 $$;
 
-create trigger resolutions_after_insert_trigger
+create or replace trigger resolutions_after_insert_trigger
 after insert on public.resolutions
 for each row execute function public.resolutions_after_insert();
 
@@ -166,7 +166,7 @@ begin
 end;
 $$;
 
-create trigger profiles_protect_privileged_fields_trigger
+create or replace trigger profiles_protect_privileged_fields_trigger
 before update on public.profiles
 for each row execute function public.profiles_protect_privileged_fields();
 
@@ -196,6 +196,6 @@ begin
 end;
 $$;
 
-create trigger user_assignments_validate_trigger
+create or replace trigger user_assignments_validate_trigger
 before insert or update on public.user_assignments
 for each row execute function public.validate_user_assignment();

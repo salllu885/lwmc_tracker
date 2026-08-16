@@ -4,20 +4,27 @@
 create extension if not exists pgcrypto;
 
 -- ── Enums ────────────────────────────────────────────────────────────────
+-- Postgres has no `create type if not exists`, so these are guarded by
+-- hand — safe to run this whole script more than once.
 
-create type app_role as enum (
-  'ADMIN', 'SURVEYER', 'SUPERVISOR', 'ZO', 'MANAGER', 'GM', 'AC'
-);
+do $$ begin
+  create type app_role as enum ('ADMIN', 'SURVEYER', 'SUPERVISOR', 'ZO', 'MANAGER', 'GM', 'AC');
+exception when duplicate_object then null;
+end $$;
 
-create type report_status as enum (
-  'SUBMITTED', 'PENDING', 'IN_PROGRESS', 'CLOSED', 'REOPENED'
-);
+do $$ begin
+  create type report_status as enum ('SUBMITTED', 'PENDING', 'IN_PROGRESS', 'CLOSED', 'REOPENED');
+exception when duplicate_object then null;
+end $$;
 
-create type report_image_type as enum ('BEFORE', 'RESOLUTION');
+do $$ begin
+  create type report_image_type as enum ('BEFORE', 'RESOLUTION');
+exception when duplicate_object then null;
+end $$;
 
 -- ── Organisational hierarchy ────────────────────────────────────────────
 
-create table public.tehsils (
+create table if not exists public.tehsils (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   code text unique,
@@ -25,16 +32,16 @@ create table public.tehsils (
   created_at timestamptz not null default now()
 );
 
-create table public.zones (
+create table if not exists public.zones (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   tehsil_id uuid not null references public.tehsils(id) on delete restrict,
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
-create index zones_tehsil_id_idx on public.zones(tehsil_id);
+create index if not exists zones_tehsil_id_idx on public.zones(tehsil_id);
 
-create table public.ucs (
+create table if not exists public.ucs (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   code text,
@@ -43,12 +50,12 @@ create table public.ucs (
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
-create index ucs_zone_id_idx on public.ucs(zone_id);
-create index ucs_tehsil_id_idx on public.ucs(tehsil_id);
+create index if not exists ucs_zone_id_idx on public.ucs(zone_id);
+create index if not exists ucs_tehsil_id_idx on public.ucs(tehsil_id);
 
 -- ── Issue taxonomy ───────────────────────────────────────────────────────
 
-create table public.issue_types (
+create table if not exists public.issue_types (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   description text,
@@ -61,7 +68,7 @@ create table public.issue_types (
 -- 1:1 with auth.users. Created via the admin-create-user Edge Function
 -- (or, for the very first Admin, directly in the Supabase dashboard).
 
-create table public.profiles (
+create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null,
   username text not null unique,
@@ -75,7 +82,7 @@ create table public.profiles (
 -- A user's assignment to a level of the hierarchy. Historical rows are kept
 -- (end_date/is_active) so past reports keep their original assignment
 -- snapshot even after someone's coverage area changes.
-create table public.user_assignments (
+create table if not exists public.user_assignments (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
   tehsil_id uuid references public.tehsils(id) on delete cascade,
@@ -86,16 +93,16 @@ create table public.user_assignments (
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
-create index user_assignments_user_id_idx on public.user_assignments(user_id);
-create index user_assignments_uc_id_idx on public.user_assignments(uc_id) where uc_id is not null;
-create index user_assignments_zone_id_idx on public.user_assignments(zone_id) where zone_id is not null;
-create index user_assignments_tehsil_id_idx on public.user_assignments(tehsil_id) where tehsil_id is not null;
+create index if not exists user_assignments_user_id_idx on public.user_assignments(user_id);
+create index if not exists user_assignments_uc_id_idx on public.user_assignments(uc_id) where uc_id is not null;
+create index if not exists user_assignments_zone_id_idx on public.user_assignments(zone_id) where zone_id is not null;
+create index if not exists user_assignments_tehsil_id_idx on public.user_assignments(tehsil_id) where tehsil_id is not null;
 
 -- ── Reports ──────────────────────────────────────────────────────────────
 
-create sequence public.report_number_seq;
+create sequence if not exists public.report_number_seq;
 
-create table public.reports (
+create table if not exists public.reports (
   id uuid primary key default gen_random_uuid(),
   report_number text unique,
   -- zone_id/tehsil_id are derived server-side from uc_id by a trigger
@@ -118,17 +125,17 @@ create table public.reports (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-create index reports_uc_id_idx on public.reports(uc_id);
-create index reports_zone_id_idx on public.reports(zone_id);
-create index reports_tehsil_id_idx on public.reports(tehsil_id);
-create index reports_reported_by_idx on public.reports(reported_by);
-create index reports_assigned_supervisor_idx on public.reports(assigned_supervisor_id);
-create index reports_assigned_zo_idx on public.reports(assigned_zo_id);
-create index reports_status_idx on public.reports(status);
-create index reports_issue_type_idx on public.reports(issue_type_id);
-create index reports_created_at_idx on public.reports(created_at desc);
+create index if not exists reports_uc_id_idx on public.reports(uc_id);
+create index if not exists reports_zone_id_idx on public.reports(zone_id);
+create index if not exists reports_tehsil_id_idx on public.reports(tehsil_id);
+create index if not exists reports_reported_by_idx on public.reports(reported_by);
+create index if not exists reports_assigned_supervisor_idx on public.reports(assigned_supervisor_id);
+create index if not exists reports_assigned_zo_idx on public.reports(assigned_zo_id);
+create index if not exists reports_status_idx on public.reports(status);
+create index if not exists reports_issue_type_idx on public.reports(issue_type_id);
+create index if not exists reports_created_at_idx on public.reports(created_at desc);
 
-create table public.report_images (
+create table if not exists public.report_images (
   id uuid primary key default gen_random_uuid(),
   report_id uuid not null references public.reports(id) on delete cascade,
   image_type report_image_type not null,
@@ -139,9 +146,9 @@ create table public.report_images (
   location_accuracy double precision,
   captured_at timestamptz not null default now()
 );
-create index report_images_report_id_idx on public.report_images(report_id);
+create index if not exists report_images_report_id_idx on public.report_images(report_id);
 
-create table public.resolutions (
+create table if not exists public.resolutions (
   id uuid primary key default gen_random_uuid(),
   report_id uuid not null unique references public.reports(id) on delete cascade,
   resolved_by uuid not null references public.profiles(id),
@@ -152,7 +159,7 @@ create table public.resolutions (
   resolved_at timestamptz not null default now()
 );
 
-create table public.audit_logs (
+create table if not exists public.audit_logs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references public.profiles(id),
   report_id uuid references public.reports(id) on delete cascade,
@@ -162,10 +169,10 @@ create table public.audit_logs (
   remarks text,
   created_at timestamptz not null default now()
 );
-create index audit_logs_report_id_idx on public.audit_logs(report_id);
-create index audit_logs_created_at_idx on public.audit_logs(created_at desc);
+create index if not exists audit_logs_report_id_idx on public.audit_logs(report_id);
+create index if not exists audit_logs_created_at_idx on public.audit_logs(created_at desc);
 
-create table public.notifications (
+create table if not exists public.notifications (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
   report_id uuid references public.reports(id) on delete cascade,
@@ -174,4 +181,4 @@ create table public.notifications (
   is_read boolean not null default false,
   created_at timestamptz not null default now()
 );
-create index notifications_user_id_idx on public.notifications(user_id, is_read);
+create index if not exists notifications_user_id_idx on public.notifications(user_id, is_read);

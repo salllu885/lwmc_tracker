@@ -9,11 +9,13 @@ insert into storage.buckets (id, name, public)
 values ('report-photos', 'report-photos', false)
 on conflict (id) do nothing;
 
+drop policy if exists report_photos_select on storage.objects;
 create policy report_photos_select on storage.objects for select to authenticated using (
   bucket_id = 'report-photos'
   and private.can_view_report((split_part(name, '/', 1))::uuid)
 );
 
+drop policy if exists report_photos_insert on storage.objects;
 create policy report_photos_insert on storage.objects for insert to authenticated with check (
   bucket_id = 'report-photos'
   and private.can_view_report((split_part(name, '/', 1))::uuid)

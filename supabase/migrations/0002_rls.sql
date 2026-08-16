@@ -90,25 +90,36 @@ alter table public.audit_logs enable row level security;
 alter table public.notifications enable row level security;
 
 -- ── Reference data: readable by everyone signed in, writable by Admin ──
+-- Every policy below is preceded by `drop policy if exists` so this whole
+-- script is safe to paste and run more than once.
 
+drop policy if exists tehsils_select on public.tehsils;
 create policy tehsils_select on public.tehsils for select to authenticated using (true);
+drop policy if exists tehsils_write on public.tehsils;
 create policy tehsils_write on public.tehsils for all to authenticated
   using (private.current_role() = 'ADMIN') with check (private.current_role() = 'ADMIN');
 
+drop policy if exists zones_select on public.zones;
 create policy zones_select on public.zones for select to authenticated using (true);
+drop policy if exists zones_write on public.zones;
 create policy zones_write on public.zones for all to authenticated
   using (private.current_role() = 'ADMIN') with check (private.current_role() = 'ADMIN');
 
+drop policy if exists ucs_select on public.ucs;
 create policy ucs_select on public.ucs for select to authenticated using (true);
+drop policy if exists ucs_write on public.ucs;
 create policy ucs_write on public.ucs for all to authenticated
   using (private.current_role() = 'ADMIN') with check (private.current_role() = 'ADMIN');
 
+drop policy if exists issue_types_select on public.issue_types;
 create policy issue_types_select on public.issue_types for select to authenticated using (true);
+drop policy if exists issue_types_write on public.issue_types;
 create policy issue_types_write on public.issue_types for all to authenticated
   using (private.current_role() = 'ADMIN') with check (private.current_role() = 'ADMIN');
 
 -- ── Profiles ─────────────────────────────────────────────────────────────
 
+drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles for select to authenticated using (
   id = auth.uid()
   or private.current_role() = 'ADMIN'
@@ -122,21 +133,26 @@ create policy profiles_select on public.profiles for select to authenticated usi
 -- Admin can do anything; everyone else may only touch their own row, and
 -- even then role/is_active/username are locked down by a trigger in
 -- 0003_triggers.sql (profiles_protect_privileged_fields).
+drop policy if exists profiles_write_admin on public.profiles;
 create policy profiles_write_admin on public.profiles for all to authenticated
   using (private.current_role() = 'ADMIN') with check (private.current_role() = 'ADMIN');
+drop policy if exists profiles_update_self on public.profiles;
 create policy profiles_update_self on public.profiles for update to authenticated
   using (id = auth.uid()) with check (id = auth.uid());
 
 -- ── User assignments ────────────────────────────────────────────────────
 
+drop policy if exists user_assignments_select on public.user_assignments;
 create policy user_assignments_select on public.user_assignments for select to authenticated using (
   user_id = auth.uid() or private.current_role() = 'ADMIN'
 );
+drop policy if exists user_assignments_write_admin on public.user_assignments;
 create policy user_assignments_write_admin on public.user_assignments for all to authenticated
   using (private.current_role() = 'ADMIN') with check (private.current_role() = 'ADMIN');
 
 -- ── Reports ──────────────────────────────────────────────────────────────
 
+drop policy if exists reports_select on public.reports;
 create policy reports_select on public.reports for select to authenticated using (
   private.current_role() = 'ADMIN'
   or (private.current_role() = 'SURVEYER' and reported_by = auth.uid())
@@ -150,6 +166,7 @@ create policy reports_select on public.reports for select to authenticated using
 );
 
 -- A Surveyer can only file a report for a UC they're actually assigned to.
+drop policy if exists reports_insert on public.reports;
 create policy reports_insert on public.reports for insert to authenticated with check (
   private.current_role() = 'ADMIN'
   or (private.current_role() = 'SURVEYER' and reported_by = auth.uid() and uc_id in (select private.assigned_uc_ids()))
@@ -158,6 +175,7 @@ create policy reports_insert on public.reports for insert to authenticated with 
 -- Only the responsible Supervisor/ZO (or Admin) can move a report through
 -- its lifecycle. No delete policy anywhere -> deletes are always denied for
 -- API callers.
+drop policy if exists reports_update on public.reports;
 create policy reports_update on public.reports for update to authenticated
   using (
     private.current_role() = 'ADMIN'
@@ -172,18 +190,22 @@ create policy reports_update on public.reports for update to authenticated
 
 -- ── Report images (immutable evidence: no update/delete policy) ────────
 
+drop policy if exists report_images_select on public.report_images;
 create policy report_images_select on public.report_images for select to authenticated using (
   private.can_view_report(report_id)
 );
+drop policy if exists report_images_insert on public.report_images;
 create policy report_images_insert on public.report_images for insert to authenticated with check (
   private.can_view_report(report_id) and uploaded_by = auth.uid()
 );
 
 -- ── Resolutions (immutable once filed: no update/delete policy) ────────
 
+drop policy if exists resolutions_select on public.resolutions;
 create policy resolutions_select on public.resolutions for select to authenticated using (
   private.can_view_report(report_id)
 );
+drop policy if exists resolutions_insert on public.resolutions;
 create policy resolutions_insert on public.resolutions for insert to authenticated with check (
   resolved_by = auth.uid()
   and (
@@ -197,6 +219,7 @@ create policy resolutions_insert on public.resolutions for insert to authenticat
 
 -- ── Audit logs (read-only to clients; only triggers may insert) ────────
 
+drop policy if exists audit_logs_select on public.audit_logs;
 create policy audit_logs_select on public.audit_logs for select to authenticated using (
   private.current_role() = 'ADMIN' or (report_id is not null and private.can_view_report(report_id))
 );
@@ -207,9 +230,11 @@ create policy audit_logs_select on public.audit_logs for select to authenticated
 
 -- ── Notifications ────────────────────────────────────────────────────────
 
+drop policy if exists notifications_select on public.notifications;
 create policy notifications_select on public.notifications for select to authenticated using (
   user_id = auth.uid() or private.current_role() = 'ADMIN'
 );
+drop policy if exists notifications_update_self on public.notifications;
 create policy notifications_update_self on public.notifications for update to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 -- No client insert policy — rows are written by triggers only.
