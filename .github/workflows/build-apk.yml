@@ -30,6 +30,18 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
+      # @capacitor/geolocation ships an EMPTY AndroidManifest.xml (unlike
+      # Camera, which delegates to the device's own camera app and needs no
+      # permission at all) — it relies on the host app to declare location
+      # permissions itself. android/ isn't committed to this repo (it's
+      # regenerated fresh every build), so that declaration has to be
+      # injected here, right after cap generates the template, or the app
+      # never even shows a Location toggle in Android's permission settings.
+      - name: Add location permissions to Android manifest
+        run: |
+          sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />#' android/app/src/main/AndroidManifest.xml
+          grep -A2 'permission.INTERNET' android/app/src/main/AndroidManifest.xml
+
       - name: Sync Capacitor
         run: npx cap sync android
 
