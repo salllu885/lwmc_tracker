@@ -3,9 +3,33 @@ import { useNavigate } from 'react-router-dom';
 import { RefreshCw, Navigation } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { createReport } from '../lib/api/reports';
-import { listAssignedUcs, listIssueTypes } from '../lib/api/orgHierarchy';
+import { listAssignedUcs, listUcs, listIssueTypes } from '../lib/api/orgHierarchy';
+import { listAssignments } from '../lib/api/users';
 import { captureLocation } from '../lib/media';
 import PhotoCapture from '../components/PhotoCapture';
+
+// ADMIN/AREA_MANAGER can file a report for ANY UC (reports_insert RLS has
+// no uc_id restriction for them — they can "act as anyone" per the role
+// model), so restricting the dropdown to their own uc_id assignment left
+// them with an empty, unfileable list — they're never UC-assigned, they're
+// Tehsil/district-scoped. ZO is similarly zone-scoped, not UC-assigned, so
+// it needs the zone's UC list instead. Supervisor/Surveyor stay on their
+// own assigned UC(s) only, since that's the actual RLS-enforced boundary
+// for those two roles.
+async function resolveReportableUcs(profile) {
+  if (profile.role === 'ADMIN' || profile.role === 'AREA_MANAGER') {
+    return { ucs: await listUcs({ activeOnly: true }), autoSelect: false };
+  }
+  const assigned = await listAssignedUcs(profile.id);
+  if (assigned.length) return { ucs: assigned, autoSelect: true };
+  if (profile.role === 'ZO') {
+    const rows = await listAssignments({ userId: profile.id });
+    const zoneIds = [...new Set(rows.filter((r) => r.is_active && r.zone_id).map((r) => r.zone_id))];
+    const lists = await Promise.all(zoneIds.map((zoneId) => listUcs({ zoneId, activeOnly: true })));
+    return { ucs: lists.flat(), autoSelect: false };
+  }
+  return { ucs: [], autoSelect: false };
+}
 
 export default function NewReport() {
   const { profile } = useAuth();
@@ -25,9 +49,9 @@ export default function NewReport() {
 
   useEffect(() => {
     if (!profile) return;
-    listAssignedUcs(profile.id).then((data) => {
+    resolveReportableUcs(profile).then(({ ucs: data, autoSelect }) => {
       setUcs(data);
-      if (data[0]) setUcId(data[0].id);
+      if (autoSelect && data[0]) setUcId(data[0].id);
     });
     listIssueTypes({ activeOnly: true }).then((data) => {
       setIssueTypes(data);
@@ -126,7 +150,8 @@ export default function NewReport() {
               onChange={(e) => setUcId(e.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
             >
-              {ucs.length === 0 && <option value="">No UC assigned</option>}
+              {ucs.length === 0 && <option value="">No UC available — contact an admin</option>}
+              {ucs.length > 0 && !ucId && <option value="">Select UC…</option>}
               {ucs.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.name}
