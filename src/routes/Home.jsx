@@ -37,12 +37,24 @@ export default function Home() {
         <StatCard label="Closed" value={closed} icon={<CheckCircle2 size={16} />} tone="emerald" />
       </div>
 
-      {role === 'SURVEYER' && (
+      {/* Everyone except a pure Rectifier can file a report — Surveyor
+          exclusively, and every "controller" tier (Supervisor/ZO/Area
+          Manager/Admin) can act as a Surveyor too. */}
+      {role !== 'RECTIFIER' && (
         <button
           onClick={() => navigate('/reports/new')}
           className="w-full rounded-xl bg-slate-900 text-white font-semibold py-3 text-sm hover:bg-slate-800 transition-colors"
         >
           + NEW ISSUE
+        </button>
+      )}
+
+      {role === 'RECTIFIER' && (
+        <button
+          onClick={() => navigate('/queue')}
+          className="w-full rounded-xl bg-slate-900 text-white font-semibold py-3 text-sm hover:bg-slate-800 transition-colors"
+        >
+          GO TO RESOLVE QUEUE
         </button>
       )}
 

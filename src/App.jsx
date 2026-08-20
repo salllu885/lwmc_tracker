@@ -7,10 +7,14 @@ import Home from './routes/Home';
 import NewReport from './routes/NewReport';
 import ReportsList from './routes/ReportsList';
 import ReportDetail from './routes/ReportDetail';
+import RectifierQueue from './routes/RectifierQueue';
 import MapView from './routes/MapView';
+import LiveTracking from './routes/LiveTracking';
+import Attendance from './routes/Attendance';
 import Analytics from './routes/Analytics';
 import Profile from './routes/Profile';
 import AdminLayout from './routes/Admin/AdminLayout';
+import Districts from './routes/Admin/Districts';
 import Tehsils from './routes/Admin/Tehsils';
 import Zones from './routes/Admin/Zones';
 import Ucs from './routes/Admin/Ucs';
@@ -27,11 +31,15 @@ function AuthedShell() {
           <Route path="/reports/new" element={<NewReport />} />
           <Route path="/reports/:id" element={<ReportDetail />} />
           <Route path="/reports" element={<ReportsList />} />
+          <Route path="/queue" element={<RectifierQueue />} />
           <Route path="/map" element={<MapView />} />
+          <Route path="/live-tracking" element={<LiveTracking />} />
+          <Route path="/attendance" element={<Attendance />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<Navigate to="tehsils" replace />} />
+            <Route index element={<Navigate to="districts" replace />} />
+            <Route path="districts" element={<Districts />} />
             <Route path="tehsils" element={<Tehsils />} />
             <Route path="zones" element={<Zones />} />
             <Route path="ucs" element={<Ucs />} />

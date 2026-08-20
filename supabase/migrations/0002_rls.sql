@@ -42,6 +42,9 @@ $$;
 -- Central "can this caller see this report" check, reused by report_images,
 -- resolutions, audit_logs and the storage policies so evidence/audit rows
 -- always follow the same scope as the report itself.
+-- View scope: Admin + Area Manager see the whole district; ZO is scoped to
+-- their own Zone; Supervisor/Surveyor/Rectifier are scoped to their own
+-- assigned UC(s).
 create or replace function private.can_view_report(p_report_id uuid)
 returns boolean
 language sql stable security definer set search_path = public as $$
@@ -49,15 +52,9 @@ language sql stable security definer set search_path = public as $$
     select 1 from public.reports r
     where r.id = p_report_id
       and (
-        private.current_role() = 'ADMIN'
-        or (private.current_role() = 'SURVEYER' and r.reported_by = auth.uid())
-        or (private.current_role() = 'SUPERVISOR' and r.uc_id in (select private.assigned_uc_ids()))
+        private.current_role() in ('ADMIN', 'AREA_MANAGER')
         or (private.current_role() = 'ZO' and r.zone_id in (select private.assigned_zone_ids()))
-        or (private.current_role() = 'MANAGER' and (
-              r.zone_id in (select private.assigned_zone_ids())
-              or r.tehsil_id in (select private.assigned_tehsil_ids())
-            ))
-        or (private.current_role() in ('GM', 'AC') and r.tehsil_id in (select private.assigned_tehsil_ids()))
+        or (private.current_role() in ('SUPERVISOR', 'SURVEYOR', 'RECTIFIER') and r.uc_id in (select private.assigned_uc_ids()))
       )
   );
 $$;
@@ -154,38 +151,41 @@ create policy user_assignments_write_admin on public.user_assignments for all to
 
 drop policy if exists reports_select on public.reports;
 create policy reports_select on public.reports for select to authenticated using (
-  private.current_role() = 'ADMIN'
-  or (private.current_role() = 'SURVEYER' and reported_by = auth.uid())
-  or (private.current_role() = 'SUPERVISOR' and uc_id in (select private.assigned_uc_ids()))
+  private.current_role() in ('ADMIN', 'AREA_MANAGER')
   or (private.current_role() = 'ZO' and zone_id in (select private.assigned_zone_ids()))
-  or (private.current_role() = 'MANAGER' and (
-        zone_id in (select private.assigned_zone_ids())
-        or tehsil_id in (select private.assigned_tehsil_ids())
-      ))
-  or (private.current_role() in ('GM', 'AC') and tehsil_id in (select private.assigned_tehsil_ids()))
+  or (private.current_role() in ('SUPERVISOR', 'SURVEYOR', 'RECTIFIER') and uc_id in (select private.assigned_uc_ids()))
 );
 
--- A Surveyer can only file a report for a UC they're actually assigned to.
+-- Who may REPORT: Surveyor + every "controller" tier except Rectifier
+-- (Rectifier is resolve-only — see resolutions_insert below). A controller
+-- reports as themselves, scoped to what they can already see: Area Manager
+-- anywhere in the district, ZO within their zone, Supervisor/Surveyor
+-- within their own assigned UC(s).
 drop policy if exists reports_insert on public.reports;
 create policy reports_insert on public.reports for insert to authenticated with check (
-  private.current_role() = 'ADMIN'
-  or (private.current_role() = 'SURVEYER' and reported_by = auth.uid() and uc_id in (select private.assigned_uc_ids()))
+  reported_by = auth.uid()
+  and (
+    private.current_role() in ('ADMIN', 'AREA_MANAGER')
+    or (private.current_role() = 'ZO' and uc_id in (select id from public.ucs where zone_id in (select private.assigned_zone_ids())))
+    or (private.current_role() in ('SUPERVISOR', 'SURVEYOR') and uc_id in (select private.assigned_uc_ids()))
+  )
 );
 
--- Only the responsible Supervisor/ZO (or Admin) can move a report through
--- its lifecycle. No delete policy anywhere -> deletes are always denied for
--- API callers.
+-- Report lifecycle updates stay with the "controller" tiers (Rectifier
+-- resolves through the resolutions table below, not a direct report
+-- update). No delete policy anywhere -> deletes are always denied for API
+-- callers.
 drop policy if exists reports_update on public.reports;
 create policy reports_update on public.reports for update to authenticated
   using (
-    private.current_role() = 'ADMIN'
-    or (private.current_role() = 'SUPERVISOR' and uc_id in (select private.assigned_uc_ids()))
+    private.current_role() in ('ADMIN', 'AREA_MANAGER')
     or (private.current_role() = 'ZO' and zone_id in (select private.assigned_zone_ids()))
+    or (private.current_role() = 'SUPERVISOR' and uc_id in (select private.assigned_uc_ids()))
   )
   with check (
-    private.current_role() = 'ADMIN'
-    or (private.current_role() = 'SUPERVISOR' and uc_id in (select private.assigned_uc_ids()))
+    private.current_role() in ('ADMIN', 'AREA_MANAGER')
     or (private.current_role() = 'ZO' and zone_id in (select private.assigned_zone_ids()))
+    or (private.current_role() = 'SUPERVISOR' and uc_id in (select private.assigned_uc_ids()))
   );
 
 -- ── Report images (immutable evidence: no update/delete policy) ────────
@@ -205,15 +205,21 @@ drop policy if exists resolutions_select on public.resolutions;
 create policy resolutions_select on public.resolutions for select to authenticated using (
   private.can_view_report(report_id)
 );
+-- Who may RESOLVE: Rectifier + every controller tier except Surveyor — a
+-- live scope check (Rectifier picks which pending report to work from a
+-- queue, rather than a single report handed to them, so this can't use the
+-- old pre-stamped assigned_supervisor_id/assigned_zo_id shortcut).
 drop policy if exists resolutions_insert on public.resolutions;
 create policy resolutions_insert on public.resolutions for insert to authenticated with check (
   resolved_by = auth.uid()
-  and (
-    private.current_role() = 'ADMIN'
-    or exists (
-      select 1 from public.reports r
-      where r.id = report_id and (r.assigned_supervisor_id = auth.uid() or r.assigned_zo_id = auth.uid())
-    )
+  and exists (
+    select 1 from public.reports r
+    where r.id = report_id
+      and (
+        private.current_role() in ('ADMIN', 'AREA_MANAGER')
+        or (private.current_role() = 'ZO' and r.zone_id in (select private.assigned_zone_ids()))
+        or (private.current_role() in ('SUPERVISOR', 'RECTIFIER') and r.uc_id in (select private.assigned_uc_ids()))
+      )
   )
 );
 

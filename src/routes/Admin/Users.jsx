@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { listUsers, createUser, setUserActive } from '../../lib/api/users';
 
-const ROLES = ['ADMIN', 'SURVEYER', 'SUPERVISOR', 'ZO', 'MANAGER', 'GM', 'AC'];
+// Role is a permission tier, not a job title — ADMIN covers DC/CO MCL/GM
+// LWMC/WASA, AREA_MANAGER covers AC/GM/TM/Manager. The actual title goes in
+// the free-text Designation field below, not a separate role value.
+const ROLES = ['ADMIN', 'AREA_MANAGER', 'ZO', 'SUPERVISOR', 'SURVEYOR', 'RECTIFIER'];
 
 export default function Users() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ username: '', fullName: '', phone: '', role: 'SURVEYER', password: '' });
+  const [form, setForm] = useState({ username: '', fullName: '', phone: '', role: 'SURVEYOR', designation: '', password: '' });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -31,7 +34,7 @@ export default function Users() {
     try {
       await createUser(form);
       setCreating(false);
-      setForm({ username: '', fullName: '', phone: '', role: 'SURVEYER', password: '' });
+      setForm({ username: '', fullName: '', phone: '', role: 'SURVEYOR', designation: '', password: '' });
       await refresh();
     } catch (e) {
       setError(e.message || 'Failed to create user');
@@ -64,6 +67,7 @@ export default function Users() {
                 <th className="py-2 px-3">Name</th>
                 <th className="py-2 px-3">Username</th>
                 <th className="py-2 px-3">Role</th>
+                <th className="py-2 px-3">Designation</th>
                 <th className="py-2 px-3">Phone</th>
                 <th className="py-2 px-3">Status</th>
               </tr>
@@ -74,6 +78,7 @@ export default function Users() {
                   <td className="py-2 px-3 text-slate-700">{u.full_name}</td>
                   <td className="py-2 px-3 font-mono">{u.username}</td>
                   <td className="py-2 px-3">{u.role}</td>
+                  <td className="py-2 px-3">{u.designation || '—'}</td>
                   <td className="py-2 px-3">{u.phone || '—'}</td>
                   <td className="py-2 px-3">
                     <button
@@ -120,6 +125,11 @@ export default function Users() {
                   ))}
                 </select>
               </div>
+              <Field
+                label="Designation (e.g. AC, GM LWMC, WASA, Zone Officer)"
+                value={form.designation}
+                onChange={(v) => setForm((s) => ({ ...s, designation: v }))}
+              />
               <Field label="Temporary password" value={form.password} onChange={(v) => setForm((s) => ({ ...s, password: v }))} type="password" />
               <p className="text-[11px] text-slate-400">
                 After creating the user, assign them to a UC/Zone/Tehsil under the Assignments tab.

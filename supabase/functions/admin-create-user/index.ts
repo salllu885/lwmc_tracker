@@ -1,12 +1,27 @@
-// Admin-only user creation.
+// User creation, gated by manage-scope — not Admin-only anymore.
 //
 // Field staff log in with a username, not an email, so accounts are given a
 // synthetic email (<username>@<domain>) that only this function ever needs
 // to know about. The service-role key that can call the Supabase Auth admin
 // API lives only here (server-side env var) — it is never shipped to the
-// client bundle. Every call re-checks that the caller is an active Admin by
-// reading `profiles` with the CALLER's own JWT, before touching anything
-// with the privileged service-role client.
+// client bundle. Every call re-checks the CALLER's own role/scope by
+// reading `profiles`/`user_assignments` with the caller's own JWT, before
+// touching anything with the privileged service-role client.
+//
+// Manage scope (who may create which role, and where):
+//   ADMIN        anywhere in the district
+//   AREA_MANAGER only within their own assigned Tehsil/Town — may create
+//                ZO / SUPERVISOR / SURVEYOR / RECTIFIER there
+//   ZO           only within their own assigned Zone — may create
+//                SUPERVISOR / SURVEYOR / RECTIFIER there
+//   everyone else (Supervisor/Surveyor/Rectifier) — no manage rights at
+//                all, per "Supervisor can't add/remove, it's up to ZO"
+// Only ADMIN may create another ADMIN or AREA_MANAGER account (district-
+// level appointments — DC, CO MCL, GM LWMC, WASA, AC, TM, ...); a ZO or
+// Area Manager is restricted to the roles below by MANAGER_CREATABLE_ROLES
+// / ZO_CREATABLE_ROLES. The very first Admin still has to be created by
+// hand in the Supabase dashboard, since there's no Admin yet to call this
+// function — see supabase/seed.sql.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
@@ -14,7 +29,11 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const EMAIL_DOMAIN = Deno.env.get('SYNTHETIC_EMAIL_DOMAIN') ?? 'lwmc.internal';
 
-const ROLES = ['ADMIN', 'SURVEYER', 'SUPERVISOR', 'ZO', 'MANAGER', 'GM', 'AC'];
+const ROLES = ['ADMIN', 'AREA_MANAGER', 'ZO', 'SUPERVISOR', 'SURVEYOR', 'RECTIFIER'];
+// Roles a ZO or Area Manager is permitted to hand out; only ADMIN can create
+// another ADMIN or AREA_MANAGER (checked below, not just listed here).
+const MANAGER_CREATABLE_ROLES = ['ZO', 'SUPERVISOR', 'SURVEYOR', 'RECTIFIER'];
+const ZO_CREATABLE_ROLES = ['SUPERVISOR', 'SURVEYOR', 'RECTIFIER'];
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -27,6 +46,36 @@ function json(body: unknown, status: number) {
     status,
     headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
   });
+}
+
+type Assignment = { tehsil_id?: string; zone_id?: string; uc_id?: string };
+
+// Walks a UC- or Zone-level assignment up to its owning Tehsil/Zone, same
+// as private.resolve_tehsil_id()/resolve_zone_id() in the migration — a
+// new Surveyor's assignment only ever carries a uc_id, not a tehsil_id, so
+// the scope check has to resolve it rather than compare uc_id directly.
+// deno-lint-ignore no-explicit-any
+async function resolveTehsilId(client: any, assignment: Assignment): Promise<string | null> {
+  if (assignment.tehsil_id) return assignment.tehsil_id;
+  if (assignment.zone_id) {
+    const { data } = await client.from('zones').select('tehsil_id').eq('id', assignment.zone_id).single();
+    return data?.tehsil_id ?? null;
+  }
+  if (assignment.uc_id) {
+    const { data } = await client.from('ucs').select('tehsil_id').eq('id', assignment.uc_id).single();
+    return data?.tehsil_id ?? null;
+  }
+  return null;
+}
+
+// deno-lint-ignore no-explicit-any
+async function resolveZoneId(client: any, assignment: Assignment): Promise<string | null> {
+  if (assignment.zone_id) return assignment.zone_id;
+  if (assignment.uc_id) {
+    const { data } = await client.from('ucs').select('zone_id').eq('id', assignment.uc_id).single();
+    return data?.zone_id ?? null;
+  }
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -50,12 +99,15 @@ Deno.serve(async (req) => {
 
   const { data: callerProfile, error: profileErr } = await callerClient
     .from('profiles')
-    .select('role, is_active')
+    .select('id, role, is_active')
     .eq('id', userData.user.id)
     .single();
 
-  if (profileErr || !callerProfile || callerProfile.role !== 'ADMIN' || !callerProfile.is_active) {
-    return json({ error: 'Only an active Admin can create users' }, 403);
+  if (profileErr || !callerProfile || !callerProfile.is_active) {
+    return json({ error: 'Only an active Admin, Area Manager, or ZO can create users' }, 403);
+  }
+  if (!['ADMIN', 'AREA_MANAGER', 'ZO'].includes(callerProfile.role)) {
+    return json({ error: 'Only an active Admin, Area Manager, or ZO can create users' }, 403);
   }
 
   let body: Record<string, unknown>;
@@ -65,11 +117,12 @@ Deno.serve(async (req) => {
     return json({ error: 'Invalid JSON body' }, 400);
   }
 
-  const { username, full_name, phone, role, password, assignment } = body as {
+  const { username, full_name, phone, role, designation, password, assignment } = body as {
     username?: string;
     full_name?: string;
     phone?: string;
     role?: string;
+    designation?: string;
     password?: string;
     assignment?: { tehsil_id?: string; zone_id?: string; uc_id?: string };
   };
@@ -82,6 +135,51 @@ Deno.serve(async (req) => {
   }
   if (String(password).length < 8) {
     return json({ error: 'password must be at least 8 characters' }, 400);
+  }
+
+  // Scope check #1: which roles this caller is allowed to hand out at all.
+  if (callerProfile.role === 'AREA_MANAGER' && !MANAGER_CREATABLE_ROLES.includes(role)) {
+    return json({ error: `An Area Manager can only create: ${MANAGER_CREATABLE_ROLES.join(', ')}` }, 403);
+  }
+  if (callerProfile.role === 'ZO' && !ZO_CREATABLE_ROLES.includes(role)) {
+    return json({ error: `A ZO can only create: ${ZO_CREATABLE_ROLES.join(', ')}` }, 403);
+  }
+
+  // Scope check #2: IF the caller passed an assignment inline with
+  // creation, it must fall inside the caller's own Tehsil/Town (Area
+  // Manager) or Zone (ZO) — Admin is unrestricted. A ZO/Area Manager can
+  // also create a user with no assignment yet and assign them afterward
+  // via the Assignments tab, which is scope-checked by the
+  // user_assignments_manage RLS policy instead. That second path is the
+  // ONLY reason this check isn't unconditional: this function's own
+  // assignment-insert below uses the service-role key and bypasses RLS
+  // entirely, so any assignment passed HERE must be validated here.
+  const hasAssignment = assignment && (assignment.tehsil_id || assignment.zone_id || assignment.uc_id);
+  if (callerProfile.role !== 'ADMIN' && hasAssignment) {
+    const resolved =
+      callerProfile.role === 'AREA_MANAGER'
+        ? await resolveTehsilId(callerClient, assignment)
+        : await resolveZoneId(callerClient, assignment);
+
+    if (!resolved) {
+      return json({ error: 'Could not resolve the assignment to a Tehsil/Zone' }, 400);
+    }
+
+    const { data: callerAssignments, error: caErr } = await callerClient
+      .from('user_assignments')
+      .select('tehsil_id, zone_id, uc_id')
+      .eq('user_id', callerProfile.id)
+      .eq('is_active', true);
+    if (caErr) return json({ error: caErr.message }, 400);
+
+    const inScope =
+      callerProfile.role === 'AREA_MANAGER'
+        ? (callerAssignments ?? []).some((a) => a.tehsil_id === resolved)
+        : (callerAssignments ?? []).some((a) => a.zone_id === resolved);
+
+    if (!inScope) {
+      return json({ error: 'That assignment is outside your own Tehsil/Town or Zone' }, 403);
+    }
   }
 
   const normalizedUsername = String(username).trim().toLowerCase();
@@ -107,6 +205,7 @@ Deno.serve(async (req) => {
     username: normalizedUsername,
     phone: phone ?? null,
     role,
+    designation: designation ?? null,
   });
 
   if (insertProfileErr) {

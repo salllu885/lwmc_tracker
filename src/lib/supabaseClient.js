@@ -9,7 +9,13 @@ if (!url || !anonKey) {
   );
 }
 
-export const supabase = createClient(url ?? '', anonKey ?? '', {
+// createClient() throws synchronously on an empty/invalid URL — with no env
+// vars set that happened at module-load time, before React ever mounted, so
+// the whole app was a blank white screen instead of the "calls fail later"
+// degradation the warning above promises. A syntactically valid placeholder
+// lets the client construct; real calls against it still fail (no such
+// project), which is the actually-intended fallback.
+export const supabase = createClient(url || 'https://placeholder.supabase.co', anonKey || 'placeholder-anon-key', {
   auth: {
     persistSession: true,
     autoRefreshToken: true,

@@ -3,7 +3,9 @@ import { supabase } from '../supabaseClient';
 export async function fetchReportsForAnalytics(filters = {}) {
   let q = supabase
     .from('reports')
-    .select('id,status,issue_type_id,uc_id,zone_id,tehsil_id,reported_by,assigned_supervisor_id,assigned_zo_id,created_at');
+    .select(
+      'id,status,issue_type_id,uc_id,zone_id,tehsil_id,reported_by,assigned_supervisor_id,assigned_zo_id,created_at,resolution:resolutions(resolved_by,resolved_at)'
+    );
 
   if (filters.tehsilId) q = q.eq('tehsil_id', filters.tehsilId);
   if (filters.zoneId) q = q.eq('zone_id', filters.zoneId);

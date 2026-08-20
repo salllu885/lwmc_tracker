@@ -52,6 +52,25 @@ export async function getReport(id) {
   return { ...data, images: images ?? [], resolution: resolution ?? null };
 }
 
+// Bulk fetch for exports (one query for many reports' photos/resolutions,
+// instead of N+1 getReport() calls) — grouped by report_id client-side.
+export async function listReportImages(reportIds) {
+  if (!reportIds.length) return [];
+  const { data, error } = await supabase.from('report_images').select('*').in('report_id', reportIds);
+  if (error) throw error;
+  return data;
+}
+
+export async function listResolutions(reportIds) {
+  if (!reportIds.length) return [];
+  const { data, error } = await supabase
+    .from('resolutions')
+    .select('*, resolver:profiles!resolutions_resolved_by_fkey(id,full_name)')
+    .in('report_id', reportIds);
+  if (error) throw error;
+  return data;
+}
+
 export async function uploadReportPhoto(reportId, kind, dataUrl) {
   const blob = await (await fetch(dataUrl)).blob();
   const path = `${reportId}/${kind}.jpg`;

@@ -1,7 +1,16 @@
 import { supabase } from '../supabaseClient';
 
-export async function listTehsils({ activeOnly = false } = {}) {
+export async function listDistricts({ activeOnly = false } = {}) {
+  let q = supabase.from('districts').select('*').order('name');
+  if (activeOnly) q = q.eq('is_active', true);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data;
+}
+
+export async function listTehsils({ districtId, activeOnly = false } = {}) {
   let q = supabase.from('tehsils').select('*').order('name');
+  if (districtId) q = q.eq('district_id', districtId);
   if (activeOnly) q = q.eq('is_active', true);
   const { data, error } = await q;
   if (error) throw error;

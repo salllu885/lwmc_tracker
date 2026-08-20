@@ -41,7 +41,7 @@ export async function setUserActive(userId, isActive) {
 // Account creation is the one thing regular RLS-scoped calls can't do
 // (it needs the service-role key), so it goes through the admin-create-user
 // Edge Function instead — see supabase/functions/admin-create-user.
-export async function createUser({ username, fullName, phone, role, password, assignment }) {
+export async function createUser({ username, fullName, phone, role, designation, password, assignment }) {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
   if (!token) throw new Error('Not authenticated');
@@ -53,7 +53,7 @@ export async function createUser({ username, fullName, phone, role, password, as
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ username, full_name: fullName, phone, role, password, assignment }),
+    body: JSON.stringify({ username, full_name: fullName, phone, role, designation, password, assignment }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || 'Failed to create user');

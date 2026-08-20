@@ -1,13 +1,25 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { ClipboardList, CheckCircle2, LayoutDashboard, Map as MapIcon, BarChart3, Users, LogOut } from 'lucide-react';
+import { ClipboardList, CheckCircle2, LayoutDashboard, Map as MapIcon, Radar, CalendarCheck, BarChart3, Users, LogOut } from 'lucide-react';
 import { useAuth } from '../lib/auth';
+import { useLocationTracking } from '../lib/services/locationTracking';
 
 // Mirrors the requirements doc's §51 "Main Navigation Summary" per role.
+// Role is a permission TIER now, not a job title (see 0005_hierarchy_v2.sql)
+// — AREA_MANAGER covers AC/GM/TM/Manager titles, ADMIN covers DC/CO MCL/GM
+// LWMC/WASA titles; the actual title shows via profile.designation, not a
+// separate nav entry.
 const NAV_BY_ROLE = {
-  SURVEYER: [
+  SURVEYOR: [
     { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
     { to: '/reports', label: 'Reports', icon: ClipboardList },
     { to: '/reports/new', label: 'New Issue', icon: ClipboardList },
+    { to: '/profile', label: 'Profile', icon: Users },
+  ],
+  RECTIFIER: [
+    { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
+    { to: '/queue', label: 'Queue', icon: CheckCircle2 },
+    { to: '/map', label: 'Map', icon: MapIcon },
+    { to: '/reports', label: 'History', icon: ClipboardList, end: true },
     { to: '/profile', label: 'Profile', icon: Users },
   ],
   SUPERVISOR: [
@@ -21,39 +33,34 @@ const NAV_BY_ROLE = {
     { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
     { to: '/reports?status=PENDING', label: 'Pending', icon: CheckCircle2 },
     { to: '/map', label: 'Map', icon: MapIcon },
+    { to: '/live-tracking', label: 'Live', icon: Radar },
     { to: '/reports', label: 'Reports', icon: ClipboardList, end: true },
+    { to: '/attendance', label: 'Attendance', icon: CalendarCheck },
     { to: '/analytics', label: 'Analytics', icon: BarChart3 },
+    { to: '/admin/users', label: 'Users', icon: Users },
     { to: '/profile', label: 'Profile', icon: Users },
   ],
-  MANAGER: [
+  AREA_MANAGER: [
     { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
     { to: '/reports', label: 'Reports', icon: ClipboardList },
     { to: '/map', label: 'Map', icon: MapIcon },
+    { to: '/live-tracking', label: 'Live', icon: Radar },
+    { to: '/attendance', label: 'Attendance', icon: CalendarCheck },
     { to: '/analytics', label: 'Analytics', icon: BarChart3 },
+    { to: '/admin/users', label: 'Users', icon: Users },
     { to: '/profile', label: 'Profile', icon: Users },
   ],
-  GM: gmAcNav(),
-  AC: gmAcNav(),
   ADMIN: [
     { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
     { to: '/reports', label: 'Reports', icon: ClipboardList },
     { to: '/map', label: 'Map', icon: MapIcon },
+    { to: '/live-tracking', label: 'Live', icon: Radar },
+    { to: '/attendance', label: 'Attendance', icon: CalendarCheck },
     { to: '/analytics', label: 'Analytics', icon: BarChart3 },
     { to: '/admin/tehsils', label: 'Admin', icon: Users },
     { to: '/profile', label: 'Profile', icon: Users },
   ],
 };
-
-function gmAcNav() {
-  return [
-    { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
-    { to: '/reports', label: 'Reports', icon: ClipboardList },
-    { to: '/map', label: 'Map', icon: MapIcon },
-    { to: '/analytics', label: 'Analytics', icon: BarChart3 },
-    { to: '/admin/users', label: 'Users', icon: Users },
-    { to: '/profile', label: 'Profile', icon: Users },
-  ];
-}
 
 // Same component tree serves the packaged Android app and the browser
 // "web dashboard" — bottom tabs under the md breakpoint, a sidebar above it.
@@ -61,6 +68,7 @@ export default function NavShell({ children }) {
   const { profile, role, logout } = useAuth();
   const navigate = useNavigate();
   const items = NAV_BY_ROLE[role] || [];
+  useLocationTracking(profile?.id, role);
 
   async function handleLogout() {
     await logout();

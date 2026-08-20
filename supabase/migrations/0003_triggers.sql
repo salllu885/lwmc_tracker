@@ -152,15 +152,21 @@ for each row execute function public.resolutions_after_insert();
 -- phone number); this trigger blocks the privileged columns from being
 -- smuggled into that same request.
 
+-- Role/username stay Admin-only; is_active (activate/deactivate — this
+-- app's "add/remove" for a user who already exists) delegates to
+-- private.user_in_manage_scope(), defined later in 0005_hierarchy_v2.sql —
+-- a plpgsql function body is only resolved when it EXECUTES, not when it's
+-- created, so this forward reference is safe even though the referenced
+-- function doesn't exist yet at this point in the script.
 create or replace function public.profiles_protect_privileged_fields()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if private.current_role() <> 'ADMIN' then
-    if new.role is distinct from old.role
-      or new.is_active is distinct from old.is_active
-      or new.username is distinct from old.username then
-      raise exception 'Only an admin can change role, active status, or username.';
-    end if;
+  if (new.role is distinct from old.role or new.username is distinct from old.username)
+     and private.current_role() <> 'ADMIN' then
+    raise exception 'Only an admin can change role or username.';
+  end if;
+  if new.is_active is distinct from old.is_active and not private.user_in_manage_scope(old.id) then
+    raise exception 'You do not have permission to activate or deactivate this user.';
   end if;
   return new;
 end;
@@ -179,17 +185,14 @@ declare
 begin
   select role into v_role from public.profiles where id = new.user_id;
 
-  if v_role in ('SURVEYER', 'SUPERVISOR') and new.uc_id is null then
-    raise exception 'Surveyer/Supervisor assignments require a uc_id.';
+  if v_role in ('SURVEYOR', 'RECTIFIER', 'SUPERVISOR') and new.uc_id is null then
+    raise exception '% assignments require a uc_id.', v_role;
   end if;
   if v_role = 'ZO' and new.zone_id is null then
     raise exception 'ZO assignments require a zone_id.';
   end if;
-  if v_role = 'AC' and new.tehsil_id is null then
-    raise exception 'AC assignments require a tehsil_id.';
-  end if;
-  if v_role = 'MANAGER' and new.zone_id is null and new.tehsil_id is null then
-    raise exception 'Manager assignments require a zone_id or tehsil_id.';
+  if v_role = 'AREA_MANAGER' and new.tehsil_id is null then
+    raise exception 'Area Manager assignments require a tehsil_id.';
   end if;
 
   return new;

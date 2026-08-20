@@ -46,11 +46,18 @@ export default function ReportDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // A UI-level approximation only — private.resolutions_insert (RLS) is the
+  // real gate. Rectifier has no pre-stamped assignment field to check here
+  // (they pick which pending report to resolve from a live UC-scoped
+  // queue, not a single hand-off), so the button just shows for them and
+  // Admin/Area Manager; RLS rejects it server-side if they're out of scope.
   const canResolve =
     report &&
-    ['SUPERVISOR', 'ZO', 'ADMIN'].includes(role) &&
+    ['SUPERVISOR', 'ZO', 'AREA_MANAGER', 'ADMIN', 'RECTIFIER'].includes(role) &&
     report.status !== 'CLOSED' &&
-    (role === 'ADMIN' || report.assigned_supervisor_id === profile?.id || report.assigned_zo_id === profile?.id);
+    (['ADMIN', 'AREA_MANAGER', 'RECTIFIER'].includes(role) ||
+      report.assigned_supervisor_id === profile?.id ||
+      report.assigned_zo_id === profile?.id);
 
   async function handleStart() {
     await startResolving(report.id);

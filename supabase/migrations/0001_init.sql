@@ -7,8 +7,12 @@ create extension if not exists pgcrypto;
 -- Postgres has no `create type if not exists`, so these are guarded by
 -- hand — safe to run this whole script more than once.
 
+-- Role is a permission TIER, not a job title — AREA_MANAGER covers
+-- AC/GM/TM/Manager titles, ADMIN covers DC/CO MCL/GM LWMC/WASA titles. The
+-- actual title a person holds goes in profiles.designation (free text)
+-- instead of a per-title enum value.
 do $$ begin
-  create type app_role as enum ('ADMIN', 'SURVEYER', 'SUPERVISOR', 'ZO', 'MANAGER', 'GM', 'AC');
+  create type app_role as enum ('ADMIN', 'AREA_MANAGER', 'ZO', 'SUPERVISOR', 'SURVEYOR', 'RECTIFIER');
 exception when duplicate_object then null;
 end $$;
 
@@ -74,6 +78,10 @@ create table if not exists public.profiles (
   username text not null unique,
   phone text,
   role app_role not null,
+  -- Free-text title shown in the UI: DC, CO MCL, GM LWMC, WASA, AC, TM,
+  -- Zone Officer, Supervisor, Surveyor, Rectifier... — see the app_role
+  -- comment above.
+  designation text,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

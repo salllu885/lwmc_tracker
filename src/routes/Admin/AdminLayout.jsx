@@ -1,7 +1,8 @@
 import { NavLink, Outlet } from 'react-router-dom';
 
 const TABS = [
-  { to: '/admin/tehsils', label: 'Tehsils' },
+  { to: '/admin/districts', label: 'Districts' },
+  { to: '/admin/tehsils', label: 'Tehsils & Towns' },
   { to: '/admin/zones', label: 'Zones' },
   { to: '/admin/ucs', label: 'UCs' },
   { to: '/admin/issue-types', label: 'Issue Types' },

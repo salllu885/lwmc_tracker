@@ -1,5 +1,5 @@
 -- Combined setup script: safe to paste and run more than once.
--- (Same as running 0001, 0002, 0003, 0004, then seed.sql in order.)
+-- (Same as running 0001, 0002, 0003, 0004, 0005, then seed.sql in order.)
 
 -- Field Issue Reporting & Rectification Management System
 -- 0001_init: core schema (enums, tables, indexes)
@@ -10,8 +10,12 @@ create extension if not exists pgcrypto;
 -- Postgres has no `create type if not exists`, so these are guarded by
 -- hand — safe to run this whole script more than once.
 
+-- Role is a permission TIER, not a job title — AREA_MANAGER covers
+-- AC/GM/TM/Manager titles, ADMIN covers DC/CO MCL/GM LWMC/WASA titles. The
+-- actual title a person holds goes in profiles.designation (free text)
+-- instead of a per-title enum value.
 do $$ begin
-  create type app_role as enum ('ADMIN', 'SURVEYER', 'SUPERVISOR', 'ZO', 'MANAGER', 'GM', 'AC');
+  create type app_role as enum ('ADMIN', 'AREA_MANAGER', 'ZO', 'SUPERVISOR', 'SURVEYOR', 'RECTIFIER');
 exception when duplicate_object then null;
 end $$;
 
@@ -77,6 +81,10 @@ create table if not exists public.profiles (
   username text not null unique,
   phone text,
   role app_role not null,
+  -- Free-text title shown in the UI: DC, CO MCL, GM LWMC, WASA, AC, TM,
+  -- Zone Officer, Supervisor, Surveyor, Rectifier... — see the app_role
+  -- comment above.
+  designation text,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -230,6 +238,9 @@ $$;
 -- Central "can this caller see this report" check, reused by report_images,
 -- resolutions, audit_logs and the storage policies so evidence/audit rows
 -- always follow the same scope as the report itself.
+-- View scope: Admin + Area Manager see the whole district; ZO is scoped to
+-- their own Zone; Supervisor/Surveyor/Rectifier are scoped to their own
+-- assigned UC(s).
 create or replace function private.can_view_report(p_report_id uuid)
 returns boolean
 language sql stable security definer set search_path = public as $$
@@ -237,15 +248,9 @@ language sql stable security definer set search_path = public as $$
     select 1 from public.reports r
     where r.id = p_report_id
       and (
-        private.current_role() = 'ADMIN'
-        or (private.current_role() = 'SURVEYER' and r.reported_by = auth.uid())
-        or (private.current_role() = 'SUPERVISOR' and r.uc_id in (select private.assigned_uc_ids()))
+        private.current_role() in ('ADMIN', 'AREA_MANAGER')
         or (private.current_role() = 'ZO' and r.zone_id in (select private.assigned_zone_ids()))
-        or (private.current_role() = 'MANAGER' and (
-              r.zone_id in (select private.assigned_zone_ids())
-              or r.tehsil_id in (select private.assigned_tehsil_ids())
-            ))
-        or (private.current_role() in ('GM', 'AC') and r.tehsil_id in (select private.assigned_tehsil_ids()))
+        or (private.current_role() in ('SUPERVISOR', 'SURVEYOR', 'RECTIFIER') and r.uc_id in (select private.assigned_uc_ids()))
       )
   );
 $$;
@@ -342,38 +347,41 @@ create policy user_assignments_write_admin on public.user_assignments for all to
 
 drop policy if exists reports_select on public.reports;
 create policy reports_select on public.reports for select to authenticated using (
-  private.current_role() = 'ADMIN'
-  or (private.current_role() = 'SURVEYER' and reported_by = auth.uid())
-  or (private.current_role() = 'SUPERVISOR' and uc_id in (select private.assigned_uc_ids()))
+  private.current_role() in ('ADMIN', 'AREA_MANAGER')
   or (private.current_role() = 'ZO' and zone_id in (select private.assigned_zone_ids()))
-  or (private.current_role() = 'MANAGER' and (
-        zone_id in (select private.assigned_zone_ids())
-        or tehsil_id in (select private.assigned_tehsil_ids())
-      ))
-  or (private.current_role() in ('GM', 'AC') and tehsil_id in (select private.assigned_tehsil_ids()))
+  or (private.current_role() in ('SUPERVISOR', 'SURVEYOR', 'RECTIFIER') and uc_id in (select private.assigned_uc_ids()))
 );
 
--- A Surveyer can only file a report for a UC they're actually assigned to.
+-- Who may REPORT: Surveyor + every "controller" tier except Rectifier
+-- (Rectifier is resolve-only — see resolutions_insert below). A controller
+-- reports as themselves, scoped to what they can already see: Area Manager
+-- anywhere in the district, ZO within their zone, Supervisor/Surveyor
+-- within their own assigned UC(s).
 drop policy if exists reports_insert on public.reports;
 create policy reports_insert on public.reports for insert to authenticated with check (
-  private.current_role() = 'ADMIN'
-  or (private.current_role() = 'SURVEYER' and reported_by = auth.uid() and uc_id in (select private.assigned_uc_ids()))
+  reported_by = auth.uid()
+  and (
+    private.current_role() in ('ADMIN', 'AREA_MANAGER')
+    or (private.current_role() = 'ZO' and uc_id in (select id from public.ucs where zone_id in (select private.assigned_zone_ids())))
+    or (private.current_role() in ('SUPERVISOR', 'SURVEYOR') and uc_id in (select private.assigned_uc_ids()))
+  )
 );
 
--- Only the responsible Supervisor/ZO (or Admin) can move a report through
--- its lifecycle. No delete policy anywhere -> deletes are always denied for
--- API callers.
+-- Report lifecycle updates stay with the "controller" tiers (Rectifier
+-- resolves through the resolutions table below, not a direct report
+-- update). No delete policy anywhere -> deletes are always denied for API
+-- callers.
 drop policy if exists reports_update on public.reports;
 create policy reports_update on public.reports for update to authenticated
   using (
-    private.current_role() = 'ADMIN'
-    or (private.current_role() = 'SUPERVISOR' and uc_id in (select private.assigned_uc_ids()))
+    private.current_role() in ('ADMIN', 'AREA_MANAGER')
     or (private.current_role() = 'ZO' and zone_id in (select private.assigned_zone_ids()))
+    or (private.current_role() = 'SUPERVISOR' and uc_id in (select private.assigned_uc_ids()))
   )
   with check (
-    private.current_role() = 'ADMIN'
-    or (private.current_role() = 'SUPERVISOR' and uc_id in (select private.assigned_uc_ids()))
+    private.current_role() in ('ADMIN', 'AREA_MANAGER')
     or (private.current_role() = 'ZO' and zone_id in (select private.assigned_zone_ids()))
+    or (private.current_role() = 'SUPERVISOR' and uc_id in (select private.assigned_uc_ids()))
   );
 
 -- ── Report images (immutable evidence: no update/delete policy) ────────
@@ -393,15 +401,21 @@ drop policy if exists resolutions_select on public.resolutions;
 create policy resolutions_select on public.resolutions for select to authenticated using (
   private.can_view_report(report_id)
 );
+-- Who may RESOLVE: Rectifier + every controller tier except Surveyor — a
+-- live scope check (Rectifier picks which pending report to work from a
+-- queue, rather than a single report handed to them, so this can't use the
+-- old pre-stamped assigned_supervisor_id/assigned_zo_id shortcut).
 drop policy if exists resolutions_insert on public.resolutions;
 create policy resolutions_insert on public.resolutions for insert to authenticated with check (
   resolved_by = auth.uid()
-  and (
-    private.current_role() = 'ADMIN'
-    or exists (
-      select 1 from public.reports r
-      where r.id = report_id and (r.assigned_supervisor_id = auth.uid() or r.assigned_zo_id = auth.uid())
-    )
+  and exists (
+    select 1 from public.reports r
+    where r.id = report_id
+      and (
+        private.current_role() in ('ADMIN', 'AREA_MANAGER')
+        or (private.current_role() = 'ZO' and r.zone_id in (select private.assigned_zone_ids()))
+        or (private.current_role() in ('SUPERVISOR', 'RECTIFIER') and r.uc_id in (select private.assigned_uc_ids()))
+      )
   )
 );
 
@@ -581,15 +595,21 @@ for each row execute function public.resolutions_after_insert();
 -- phone number); this trigger blocks the privileged columns from being
 -- smuggled into that same request.
 
+-- Role/username stay Admin-only; is_active (activate/deactivate — this
+-- app's "add/remove" for a user who already exists) delegates to
+-- private.user_in_manage_scope(), defined later in 0005_hierarchy_v2.sql —
+-- a plpgsql function body is only resolved when it EXECUTES, not when it's
+-- created, so this forward reference is safe even though the referenced
+-- function doesn't exist yet at this point in the script.
 create or replace function public.profiles_protect_privileged_fields()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if private.current_role() <> 'ADMIN' then
-    if new.role is distinct from old.role
-      or new.is_active is distinct from old.is_active
-      or new.username is distinct from old.username then
-      raise exception 'Only an admin can change role, active status, or username.';
-    end if;
+  if (new.role is distinct from old.role or new.username is distinct from old.username)
+     and private.current_role() <> 'ADMIN' then
+    raise exception 'Only an admin can change role or username.';
+  end if;
+  if new.is_active is distinct from old.is_active and not private.user_in_manage_scope(old.id) then
+    raise exception 'You do not have permission to activate or deactivate this user.';
   end if;
   return new;
 end;
@@ -608,17 +628,14 @@ declare
 begin
   select role into v_role from public.profiles where id = new.user_id;
 
-  if v_role in ('SURVEYER', 'SUPERVISOR') and new.uc_id is null then
-    raise exception 'Surveyer/Supervisor assignments require a uc_id.';
+  if v_role in ('SURVEYOR', 'RECTIFIER', 'SUPERVISOR') and new.uc_id is null then
+    raise exception '% assignments require a uc_id.', v_role;
   end if;
   if v_role = 'ZO' and new.zone_id is null then
     raise exception 'ZO assignments require a zone_id.';
   end if;
-  if v_role = 'AC' and new.tehsil_id is null then
-    raise exception 'AC assignments require a tehsil_id.';
-  end if;
-  if v_role = 'MANAGER' and new.zone_id is null and new.tehsil_id is null then
-    raise exception 'Manager assignments require a zone_id or tehsil_id.';
+  if v_role = 'AREA_MANAGER' and new.tehsil_id is null then
+    raise exception 'Area Manager assignments require a tehsil_id.';
   end if;
 
   return new;
@@ -652,6 +669,273 @@ create policy report_photos_insert on storage.objects for insert to authenticate
   and private.can_view_report((split_part(name, '/', 1))::uuid)
 );
 
+-- 0005_hierarchy_v2: District/Town hierarchy, live location tracking, and
+-- attendance/distance derived from activity.
+--
+-- The 6-tier role model itself (ADMIN/AREA_MANAGER/ZO/SUPERVISOR/SURVEYOR/
+-- RECTIFIER), profiles.designation, and the manage-vs-view RLS split for
+-- reports/resolutions now live directly in 0001-0003 — nothing had been
+-- deployed yet when this was designed, so those went straight into the
+-- base schema instead of an add-then-migrate dance (which also hits a real
+-- Postgres restriction: a brand-new enum value can't be used in the same
+-- transaction that added it, and the SQL editor runs a whole pasted script
+-- as one transaction). This file covers what's genuinely NEW on top of
+-- that: districts, live tracking, and the two attendance/distance views —
+-- plus the two RLS policies (profiles, user_assignments) whose full
+-- manage-scope logic depends on helper functions defined further down in
+-- this same file.
+
+-- ── Districts, Tehsil/Town unification ──────────────────────────────────
+-- "Tehsil" and "Town" are the same tier of the hierarchy under two
+-- different local-government naming conventions — one table, tagged by
+-- area_type, rather than two parallel tables.
+
+create table if not exists public.districts (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  code text unique,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+do $$ begin
+  create type tehsil_area_type as enum ('TEHSIL', 'TOWN');
+exception when duplicate_object then null;
+end $$;
+
+alter table public.tehsils add column if not exists district_id uuid references public.districts(id);
+alter table public.tehsils add column if not exists area_type tehsil_area_type not null default 'TEHSIL';
+create index if not exists tehsils_district_id_idx on public.tehsils(district_id);
+
+grant select, insert, update, delete on public.districts to authenticated;
+alter table public.districts enable row level security;
+
+drop policy if exists districts_select on public.districts;
+create policy districts_select on public.districts for select to authenticated using (true);
+drop policy if exists districts_write on public.districts;
+create policy districts_write on public.districts for all to authenticated
+  using (private.current_role() = 'ADMIN') with check (private.current_role() = 'ADMIN');
+
+-- ── Scope-resolution helpers ─────────────────────────────────────────────
+-- An assignment row only ever carries the MOST SPECIFIC level directly (a
+-- UC-level row has uc_id set, not zone_id/tehsil_id) — these walk it up to
+-- its owning Zone/Tehsil so manage-scope checks work regardless of which
+-- level the caller or the target sits at.
+
+create or replace function private.resolve_zone_id(p_uc_id uuid, p_zone_id uuid)
+returns uuid language sql stable security definer set search_path = public as $$
+  select coalesce(p_zone_id, (select zone_id from public.ucs where id = p_uc_id));
+$$;
+
+create or replace function private.resolve_tehsil_id(p_uc_id uuid, p_zone_id uuid, p_tehsil_id uuid)
+returns uuid language sql stable security definer set search_path = public as $$
+  select coalesce(
+    p_tehsil_id,
+    (select tehsil_id from public.zones where id = p_zone_id),
+    (select tehsil_id from public.ucs where id = p_uc_id)
+  );
+$$;
+
+grant execute on function private.resolve_zone_id(uuid, uuid) to authenticated;
+grant execute on function private.resolve_tehsil_id(uuid, uuid, uuid) to authenticated;
+
+-- Can the caller manage (add/remove/activate) this target user? Admin
+-- anywhere, Area Manager within their own Tehsil/Town, ZO within their own
+-- Zone, everyone else never — this is where "Supervisor can't add/remove,
+-- it's up to ZO" actually gets enforced.
+create or replace function private.user_in_manage_scope(p_user_id uuid)
+returns boolean
+language sql stable security definer set search_path = public as $$
+  select
+    private.current_role() = 'ADMIN'
+    or (
+      private.current_role() = 'AREA_MANAGER'
+      and exists (
+        select 1 from public.user_assignments ua
+        where ua.user_id = p_user_id and ua.is_active = true
+          and private.resolve_tehsil_id(ua.uc_id, ua.zone_id, ua.tehsil_id) in (select private.assigned_tehsil_ids())
+      )
+    )
+    or (
+      private.current_role() = 'ZO'
+      and exists (
+        select 1 from public.user_assignments ua
+        where ua.user_id = p_user_id and ua.is_active = true
+          and private.resolve_zone_id(ua.uc_id, ua.zone_id) in (select private.assigned_zone_ids())
+      )
+    );
+$$;
+
+grant execute on function private.user_in_manage_scope(uuid) to authenticated;
+
+-- ── profiles / user_assignments: manage-scope-aware policies ───────────
+-- These supersede the ADMIN-only versions from 0002_rls.sql now that the
+-- helper functions above exist.
+
+drop policy if exists profiles_select on public.profiles;
+create policy profiles_select on public.profiles for select to authenticated using (
+  id = auth.uid()
+  or private.current_role() in ('ADMIN', 'AREA_MANAGER')
+  or private.user_in_manage_scope(id)
+  or exists (
+    select 1 from public.user_assignments ua
+    where ua.user_id = profiles.id and ua.is_active = true
+      and (
+        (private.current_role() = 'ZO' and private.resolve_zone_id(ua.uc_id, ua.zone_id) in (select private.assigned_zone_ids()))
+        or (private.current_role() in ('SUPERVISOR', 'SURVEYOR', 'RECTIFIER') and ua.uc_id in (select private.assigned_uc_ids()))
+      )
+  )
+  or exists (
+    select 1 from public.reports r
+    where (r.reported_by = profiles.id or r.assigned_supervisor_id = profiles.id or r.assigned_zo_id = profiles.id)
+      and private.can_view_report(r.id)
+  )
+);
+
+drop policy if exists profiles_write_admin on public.profiles;
+drop policy if exists profiles_manage on public.profiles;
+create policy profiles_manage on public.profiles for all to authenticated
+  using (private.user_in_manage_scope(id)) with check (private.user_in_manage_scope(id));
+-- profiles_update_self (from 0002_rls.sql) is untouched: everyone can still
+-- edit their own row, with role/username/is_active locked down by the
+-- profiles_protect_privileged_fields trigger regardless of which policy
+-- let the UPDATE through.
+
+drop policy if exists user_assignments_select on public.user_assignments;
+create policy user_assignments_select on public.user_assignments for select to authenticated using (
+  user_id = auth.uid()
+  or private.current_role() in ('ADMIN', 'AREA_MANAGER')
+  or (private.current_role() = 'ZO' and private.resolve_zone_id(uc_id, zone_id) in (select private.assigned_zone_ids()))
+  or (private.current_role() in ('SUPERVISOR', 'SURVEYOR', 'RECTIFIER') and uc_id in (select private.assigned_uc_ids()))
+);
+
+drop policy if exists user_assignments_write_admin on public.user_assignments;
+drop policy if exists user_assignments_manage on public.user_assignments;
+create policy user_assignments_manage on public.user_assignments for all to authenticated
+  using (
+    private.current_role() = 'ADMIN'
+    or (private.current_role() = 'AREA_MANAGER' and private.resolve_tehsil_id(uc_id, zone_id, tehsil_id) in (select private.assigned_tehsil_ids()))
+    or (private.current_role() = 'ZO' and private.resolve_zone_id(uc_id, zone_id) in (select private.assigned_zone_ids()))
+  )
+  with check (
+    private.current_role() = 'ADMIN'
+    or (private.current_role() = 'AREA_MANAGER' and private.resolve_tehsil_id(uc_id, zone_id, tehsil_id) in (select private.assigned_tehsil_ids()))
+    or (private.current_role() = 'ZO' and private.resolve_zone_id(uc_id, zone_id) in (select private.assigned_zone_ids()))
+  );
+-- Supervisor/Surveyor/Rectifier get no write policy here at all — by
+-- design, per "supervisor can't add/remove, it's up to ZO".
+
+-- ── Live location tracking ───────────────────────────────────────────────
+-- Immutable pings, like report_images/audit_logs — no update/delete policy.
+
+create table if not exists public.location_pings (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  latitude double precision not null,
+  longitude double precision not null,
+  accuracy double precision,
+  recorded_at timestamptz not null default now()
+);
+create index if not exists location_pings_user_recorded_idx on public.location_pings(user_id, recorded_at desc);
+
+grant select, insert on public.location_pings to authenticated;
+alter table public.location_pings enable row level security;
+
+drop policy if exists location_pings_insert_self on public.location_pings;
+create policy location_pings_insert_self on public.location_pings for insert to authenticated with check (user_id = auth.uid());
+
+drop policy if exists location_pings_select on public.location_pings;
+create policy location_pings_select on public.location_pings for select to authenticated using (
+  user_id = auth.uid()
+  or private.current_role() in ('ADMIN', 'AREA_MANAGER')
+  or (
+    private.current_role() = 'ZO'
+    and exists (
+      select 1 from public.user_assignments ua
+      where ua.user_id = location_pings.user_id and ua.is_active = true
+        and private.resolve_zone_id(ua.uc_id, ua.zone_id) in (select private.assigned_zone_ids())
+    )
+  )
+);
+
+-- ── Attendance, derived from activity — no table to keep in sync, just a
+-- view over reports/resolutions ("reported = present") ─────────────────
+-- security_invoker is required here: without it the view would run as its
+-- owner and silently bypass the RLS on reports/resolutions above.
+
+create or replace view public.attendance_daily
+with (security_invoker = true) as
+select user_id, activity_date, true as present
+from (
+  select reported_by as user_id, (created_at at time zone 'Asia/Karachi')::date as activity_date
+  from public.reports
+  union
+  select resolved_by as user_id, (resolved_at at time zone 'Asia/Karachi')::date as activity_date
+  from public.resolutions
+) activity
+group by user_id, activity_date;
+
+grant select on public.attendance_daily to authenticated;
+
+-- ── Distance covered per day, from consecutive location pings (haversine
+-- great-circle distance — no PostGIS dependency needed for this) ────────
+
+create or replace view public.daily_distance_km
+with (security_invoker = true) as
+with pings as (
+  select
+    user_id,
+    (recorded_at at time zone 'Asia/Karachi')::date as activity_date,
+    latitude,
+    longitude,
+    lag(latitude) over w as prev_lat,
+    lag(longitude) over w as prev_lng
+  from public.location_pings
+  window w as (partition by user_id, (recorded_at at time zone 'Asia/Karachi')::date order by recorded_at)
+)
+select
+  user_id,
+  activity_date,
+  round(sum(
+    case when prev_lat is null then 0 else
+      6371 * acos(least(1.0, greatest(-1.0,
+        sin(radians(latitude)) * sin(radians(prev_lat))
+        + cos(radians(latitude)) * cos(radians(prev_lat)) * cos(radians(longitude - prev_lng))
+      )))
+    end
+  )::numeric, 2) as distance_km
+from pings
+group by user_id, activity_date;
+
+grant select on public.daily_distance_km to authenticated;
+
+-- ── Realign seed issue types with the four categories actually in scope
+-- (Garbage Heap / Garbage in Open Plot / Manhole-Slab Missing / Sewer
+-- Issue) — retire the leftovers instead of deleting them, since reports
+-- may end up referencing them once real data exists ────────────────────
+
+update public.issue_types set name = 'Garbage Heap', description = 'Accumulated solid waste in a public area', color = '#B45309'
+  where id = '00000000-0000-0000-0000-000000000301';
+update public.issue_types set name = 'Manhole / Slab Missing', description = 'Missing or damaged manhole cover or drain slab', color = '#6D28D9'
+  where id = '00000000-0000-0000-0000-000000000302';
+update public.issue_types set is_active = false where id = '00000000-0000-0000-0000-000000000303';
+update public.issue_types set name = 'Sewer Issue', description = 'Blocked, overflowing, or damaged sewer line', color = '#0369A1'
+  where id = '00000000-0000-0000-0000-000000000304';
+update public.issue_types set is_active = false where id = '00000000-0000-0000-0000-000000000305';
+
+insert into public.issue_types (id, name, description, color, is_active) values
+  ('00000000-0000-0000-0000-000000000306', 'Garbage in Open Plot', 'Illegal dumping on a vacant or open plot', '#BE123C', true)
+on conflict (id) do nothing;
+
+insert into public.districts (id, name, code, is_active) values
+  ('00000000-0000-0000-0000-000000000001', 'Test District', 'TESTD', true)
+on conflict (id) do nothing;
+
+-- Not linking Test Tehsil to Test District here — that row doesn't exist
+-- yet at this point in the combined setup_all.sql (0005 runs before
+-- seed.sql, which is what actually creates it), so the link is done in
+-- seed.sql instead, right after the tehsil insert.
+
 -- Dummy organisational data (requirements doc §49) so the app can be
 -- exercised end-to-end before real Tehsil/Zone/UC data is entered.
 -- Safe to re-run: fixed ids + ON CONFLICT DO NOTHING.
@@ -659,6 +943,13 @@ create policy report_photos_insert on storage.objects for insert to authenticate
 insert into public.tehsils (id, name, code, is_active) values
   ('00000000-0000-0000-0000-000000000001', 'Test Tehsil', 'TEST', true)
 on conflict (id) do nothing;
+
+-- Links Test Tehsil to Test District (inserted in 0005_hierarchy_v2.sql,
+-- which runs before this file) — done here rather than there since this is
+-- the first point in the combined setup_all.sql where the tehsil row is
+-- guaranteed to exist.
+update public.tehsils set district_id = '00000000-0000-0000-0000-000000000001'
+where id = '00000000-0000-0000-0000-000000000001' and district_id is null;
 
 insert into public.zones (id, name, tehsil_id, is_active) values
   ('00000000-0000-0000-0000-000000000101', 'Zone-01', '00000000-0000-0000-0000-000000000001', true)
@@ -669,15 +960,15 @@ insert into public.ucs (id, name, code, zone_id, tehsil_id, is_active) values
 on conflict (id) do nothing;
 
 insert into public.issue_types (id, name, description, color, is_active) values
-  ('00000000-0000-0000-0000-000000000301', 'Garbage', 'Uncollected garbage / overflowing bins', '#B45309', true),
-  ('00000000-0000-0000-0000-000000000302', 'Manhole Cover', 'Missing or damaged manhole cover', '#7C3AED', true),
-  ('00000000-0000-0000-0000-000000000303', 'Slab', 'Broken or missing slab', '#0EA5E9', true),
-  ('00000000-0000-0000-0000-000000000304', 'Sewer Issue', 'Sewer line blockage or overflow', '#DC2626', true),
-  ('00000000-0000-0000-0000-000000000305', 'Road Issue', 'Potholes / road surface damage', '#475569', true)
+  ('00000000-0000-0000-0000-000000000301', 'Garbage Heap', 'Accumulated solid waste in a public area', '#B45309', true),
+  ('00000000-0000-0000-0000-000000000302', 'Manhole / Slab Missing', 'Missing or damaged manhole cover or drain slab', '#6D28D9', true),
+  ('00000000-0000-0000-0000-000000000304', 'Sewer Issue', 'Blocked, overflowing, or damaged sewer line', '#0369A1', true),
+  ('00000000-0000-0000-0000-000000000306', 'Garbage in Open Plot', 'Illegal dumping on a vacant or open plot', '#BE123C', true)
 on conflict (id) do nothing;
 
--- Dummy users (ZO-01 / Supervisor-01 / Surveyer-01) are NOT created here —
--- they need real auth.users rows, which plain SQL can't produce safely.
+-- Dummy users (ZO-01 / Supervisor-01 / Surveyor-01 / Rectifier-01) are NOT
+-- created here — they need real auth.users rows, which plain SQL can't
+-- produce safely.
 --
 -- Bootstrapping order:
 --   1. The very first Admin account has to be created by hand, once, since
@@ -685,13 +976,14 @@ on conflict (id) do nothing;
 --        a. Supabase Dashboard -> Authentication -> Add User
 --           (email: admin@lwmc.internal, set a password, confirm email)
 --        b. Then run, filling in the new user's id from that screen:
---             insert into public.profiles (id, full_name, username, role)
---             values ('<auth-user-id>', 'System Admin', 'admin', 'ADMIN');
+--             insert into public.profiles (id, full_name, username, role, designation)
+--             values ('<auth-user-id>', 'System Admin', 'admin', 'ADMIN', 'DC');
 --   2. Log into the app as that Admin and use Admin > Users to create
---      ZO-01, Supervisor-01 and Surveyer-01 (this calls the
+--      ZO-01, Supervisor-01, Surveyor-01 and Rectifier-01 (this calls the
 --      admin-create-user Edge Function, which also needs to be deployed
 --      first — see supabase/functions/admin-create-user).
 --   3. Use Admin > Assignments to assign:
---        Surveyer-01  -> UC-01
+--        Surveyor-01   -> UC-01
+--        Rectifier-01  -> UC-01
 --        Supervisor-01 -> UC-01
 --        ZO-01         -> Zone-01
