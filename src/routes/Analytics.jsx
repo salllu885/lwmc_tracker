@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { fetchReportsForAnalytics, summarize, groupCount } from '../lib/api/analytics';
 import { listTehsils, listZones, listUcs, listIssueTypes } from '../lib/api/orgHierarchy';
 import { listUsers } from '../lib/api/users';
@@ -11,7 +11,10 @@ import { ClipboardList, CheckCircle2, TrendingUp, Download, FileImage, Trophy, F
 
 const DETAILED_PDF_LIMIT = 150;
 
-const STATUSES = ['SUBMITTED', 'PENDING', 'IN_PROGRESS', 'CLOSED', 'REOPENED'];
+const STATUSES = [
+  { value: 'PENDING', label: 'Reported' },
+  { value: 'CLOSED', label: 'Resolved' },
+];
 
 export default function Analytics() {
   const [reports, setReports] = useState([]);
@@ -89,6 +92,28 @@ export default function Analytics() {
     'resolved_by',
     (id) => userLookup(rectifiers, id)
   );
+
+  // Daily reported-vs-resolved trend across the filtered set — gives the
+  // page a line/area chart alongside the pie and bar charts below for
+  // visual variety, not just tables.
+  const trend = (() => {
+    const byDay = new Map();
+    const dayKey = (iso) => iso?.slice(0, 10);
+    const bump = (iso, field) => {
+      const k = dayKey(iso);
+      if (!k) return;
+      const e = byDay.get(k) || { day: k, reported: 0, resolved: 0 };
+      e[field] += 1;
+      byDay.set(k, e);
+    };
+    for (const r of reports) {
+      bump(r.created_at, 'reported');
+      bump(r.resolution?.resolved_at, 'resolved');
+    }
+    return Array.from(byDay.values())
+      .sort((a, b) => a.day.localeCompare(b.day))
+      .map((d) => ({ ...d, label: new Date(d.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }));
+  })();
 
   const allFieldUsers = [...supervisors, ...zos, ...surveyors, ...rectifiers];
   const fieldActivityRows = fieldActivity
@@ -238,17 +263,24 @@ export default function Analytics() {
         <select onChange={(e) => updateFilter('status', e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
           <option value="">All statuses</option>
           {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s.replace('_', ' ')}
+            <option key={s.value} value={s.value}>
+              {s.label}
             </option>
           ))}
         </select>
+        <span className="text-xs text-slate-400">From</span>
+        <input type="date" onChange={(e) => updateFilter('dateFrom', e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs" />
+        <span className="text-xs text-slate-400">To</span>
+        <input
+          type="date"
+          onChange={(e) => updateFilter('dateTo', e.target.value ? `${e.target.value}T23:59:59` : '')}
+          className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+        />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <StatCard label="Total reports" value={summary.total} icon={<ClipboardList size={16} />} />
-        <StatCard label="Pending" value={summary.pending} icon={<ClipboardList size={16} />} tone="amber" />
-        <StatCard label="In progress" value={summary.inProgress} icon={<TrendingUp size={16} />} />
+        <StatCard label="Reported" value={summary.pending} icon={<TrendingUp size={16} />} tone="amber" />
         <StatCard label="Closure rate" value={`${summary.closureRate}%`} icon={<CheckCircle2 size={16} />} tone="emerald" />
       </div>
 
@@ -267,6 +299,34 @@ export default function Analytics() {
         />
         <LeaderboardCard icon={<Award size={16} />} label="Best-performing ZO" name={bestZo?.label} metric={bestZo ? `${bestZo.closureRate}% closure rate` : null} />
       </div>
+
+      <ChartCard title="Reported vs resolved trend">
+        {trend.length ? (
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={trend} margin={{ left: -20 }}>
+              <defs>
+                <linearGradient id="reportedFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#CBD5E1" stopOpacity={0.8} />
+                  <stop offset="100%" stopColor="#CBD5E1" stopOpacity={0.1} />
+                </linearGradient>
+                <linearGradient id="resolvedFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#059669" stopOpacity={0.6} />
+                  <stop offset="100%" stopColor="#059669" stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+              <Tooltip />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Area type="monotone" dataKey="reported" name="Reported" stroke="#64748B" fill="url(#reportedFill)" strokeWidth={2} />
+              <Area type="monotone" dataKey="resolved" name="Resolved" stroke="#059669" fill="url(#resolvedFill)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyNote />
+        )}
+      </ChartCard>
 
       <ChartCard title="Reports by issue type">
         {byIssueType.length ? (

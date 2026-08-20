@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardList, CheckCircle2, Clock, TrendingUp } from 'lucide-react';
+import { ClipboardList, CheckCircle2, Clock } from 'lucide-react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../lib/auth';
 import { listReports } from '../lib/api/reports';
@@ -45,8 +45,10 @@ export default function Home() {
   const [issueTypes, setIssueTypes] = useState([]);
   const [tehsilId, setTehsilId] = useState('');
   const [statsReports, setStatsReports] = useState([]);
-  const [recent, setRecent] = useState([]);
+  const [feedReports, setFeedReports] = useState([]);
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const PAGE_SIZE = 20;
 
   // AREA_MANAGER (AC/Town Manager) defaults to their own Tehsil even though
   // RLS lets them view the whole district — ADMIN defaults to district-wide.
@@ -65,6 +67,7 @@ export default function Home() {
 
   useEffect(() => {
     setLoading(true);
+    setPage(0);
     const from = periodStart(period);
     const dateFrom = from ? from.toISOString() : undefined;
     Promise.all([
@@ -73,18 +76,20 @@ export default function Home() {
     ])
       .then(([forStats, forFeed]) => {
         setStatsReports(forStats);
-        setRecent(forFeed.slice(0, 8));
+        setFeedReports(forFeed);
       })
       .catch(() => {
         setStatsReports([]);
-        setRecent([]);
+        setFeedReports([]);
       })
       .finally(() => setLoading(false));
   }, [period, tehsilId]);
 
-  const pending = statsReports.filter((r) => r.status === 'PENDING' || r.status === 'SUBMITTED').length;
-  const inProgress = statsReports.filter((r) => r.status === 'IN_PROGRESS').length;
+  const pageCount = Math.max(1, Math.ceil(feedReports.length / PAGE_SIZE));
+  const recent = useMemo(() => feedReports.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE), [feedReports, page]);
+
   const closed = statsReports.filter((r) => r.status === 'CLOSED').length;
+  const pending = statsReports.length - closed;
 
   const byIssueType = useMemo(
     () => groupCount(statsReports, 'issue_type_id', (id) => issueTypes.find((t) => t.id === id)?.name || id),
@@ -154,11 +159,10 @@ export default function Home() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <StatCard label="Total" value={statsReports.length} icon={<ClipboardList size={16} />} />
-        <StatCard label="Pending" value={pending} icon={<Clock size={16} />} tone="amber" />
-        <StatCard label="In progress" value={inProgress} icon={<TrendingUp size={16} />} />
-        <StatCard label="Closed" value={closed} icon={<CheckCircle2 size={16} />} tone="emerald" />
+        <StatCard label="Reported" value={pending} icon={<Clock size={16} />} tone="amber" />
+        <StatCard label="Resolved" value={closed} icon={<CheckCircle2 size={16} />} tone="emerald" />
       </div>
 
       {/* Everyone except a pure Rectifier can file a report — Surveyor
@@ -227,7 +231,14 @@ export default function Home() {
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-slate-700 mb-2">Recent activity</h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold text-slate-700">Recent activity</h3>
+          {feedReports.length > 0 && (
+            <span className="text-[11px] text-slate-400">
+              {page * PAGE_SIZE + 1}–{Math.min(feedReports.length, page * PAGE_SIZE + PAGE_SIZE)} of {feedReports.length}
+            </span>
+          )}
+        </div>
         {loading ? (
           <p className="text-sm text-slate-400">Loading…</p>
         ) : recent.length === 0 ? (
@@ -235,11 +246,34 @@ export default function Home() {
             No reports in this period.
           </div>
         ) : (
-          <div className="space-y-2">
-            {recent.map((r) => (
-              <ReportRow key={r.id} report={r} onClick={() => navigate(`/reports/${r.id}`)} />
-            ))}
-          </div>
+          <>
+            <div className="space-y-2">
+              {recent.map((r) => (
+                <ReportRow key={r.id} report={r} onClick={() => navigate(`/reports/${r.id}`)} />
+              ))}
+            </div>
+            {pageCount > 1 && (
+              <div className="flex items-center justify-between mt-3">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-600 disabled:text-slate-300"
+                >
+                  Previous
+                </button>
+                <span className="text-[11px] text-slate-400">
+                  Page {page + 1} of {pageCount}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                  disabled={page >= pageCount - 1}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-600 disabled:text-slate-300"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

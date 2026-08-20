@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { MapPin, CheckCircle2 } from 'lucide-react';
+import { MapPin, CheckCircle2, RefreshCw, Navigation } from 'lucide-react';
 import { useAuth } from '../lib/auth';
-import { getReport, getReportPhotoSignedUrl, startResolving, resolveReport } from '../lib/api/reports';
+import { getReport, getReportPhotoSignedUrl, resolveReport } from '../lib/api/reports';
 import { listAuditLogs } from '../lib/api/audit';
-import { captureLocation } from '../lib/media';
+import { captureLocation, distanceMeters } from '../lib/media';
+import { enqueue, isNetworkError } from '../lib/offlineQueue';
 import PhotoCapture from '../components/PhotoCapture';
 import StatusBadge from '../components/StatusBadge';
 import { formatDateTime, timeAgo } from '../lib/format';
+
+const MAX_ACCURACY_M = 100;
+const MAX_RESOLVE_DISTANCE_M = 200;
 
 export default function ReportDetail() {
   const { id } = useParams();
@@ -23,6 +27,9 @@ export default function ReportDetail() {
   const [resolvePhoto, setResolvePhoto] = useState(null);
   const [resolveNote, setResolveNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [resolveLoc, setResolveLoc] = useState(null);
+  const [resolveLocStatus, setResolveLocStatus] = useState('idle');
+  const [resolveLocError, setResolveLocError] = useState('');
 
   async function load() {
     setLoading(true);
@@ -59,31 +66,57 @@ export default function ReportDetail() {
       report.assigned_supervisor_id === profile?.id ||
       report.assigned_zo_id === profile?.id);
 
-  async function handleStart() {
-    await startResolving(report.id);
-    await load();
+  async function refreshResolveLocation() {
+    setResolveLocStatus('locating');
+    setResolveLocError('');
+    try {
+      const result = await captureLocation();
+      setResolveLoc(result);
+      setResolveLocStatus('ok');
+    } catch (e) {
+      const msg = (e?.message || '').toLowerCase();
+      if (msg.includes('denied') || msg.includes('permission')) {
+        setResolveLocStatus('denied');
+      } else {
+        setResolveLocStatus('error');
+        setResolveLocError(e?.message || 'Could not get a GPS fix');
+      }
+    }
   }
+
+  useEffect(() => {
+    if (canResolve) refreshResolveLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canResolve]);
+
+  const resolveDistance =
+    resolveLoc && report?.latitude != null ? distanceMeters(resolveLoc.lat, resolveLoc.lng, report.latitude, report.longitude) : null;
+  const resolveAccuracyOk = resolveLoc && resolveLoc.accuracy != null && resolveLoc.accuracy <= MAX_ACCURACY_M;
+  const resolveDistanceOk = resolveDistance == null || resolveDistance <= MAX_RESOLVE_DISTANCE_M;
+  const canSubmitResolution =
+    resolveLocStatus === 'ok' && resolveAccuracyOk && resolveDistanceOk && resolvePhoto && resolveNote.trim() && !submitting;
 
   async function handleSubmitResolution() {
     setSubmitting(true);
     setError('');
+    const payload = {
+      reportId: report.id,
+      resolvedBy: profile.id,
+      note: resolveNote,
+      lat: resolveLoc?.lat ?? null,
+      lng: resolveLoc?.lng ?? null,
+      accuracy: resolveLoc?.accuracy ?? null,
+      photoDataUrl: resolvePhoto,
+    };
     try {
-      let loc = {};
-      try {
-        loc = await captureLocation();
-      } catch (e) {
-        // GPS optional at resolve time — fall back to no coordinates.
-      }
-      await resolveReport(report.id, {
-        resolvedBy: profile.id,
-        note: resolveNote,
-        lat: loc.lat ?? null,
-        lng: loc.lng ?? null,
-        accuracy: loc.accuracy ?? null,
-        photoDataUrl: resolvePhoto,
-      });
+      await resolveReport(report.id, payload);
       await load();
     } catch (e) {
+      if (isNetworkError(e)) {
+        enqueue('resolution', payload);
+        navigate('/queue', { replace: true });
+        return;
+      }
       setError(e.message || 'Failed to submit resolution');
     } finally {
       setSubmitting(false);
@@ -154,11 +187,36 @@ export default function ReportDetail() {
         ) : canResolve ? (
           <div className="border-t border-slate-100 pt-4 space-y-3">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Resolve this report</div>
-            {report.status === 'PENDING' && (
-              <button onClick={handleStart} className="w-full rounded-xl bg-sky-600 text-white font-semibold py-2.5 text-sm hover:bg-sky-700 transition-colors">
-                Start (mark in progress)
-              </button>
-            )}
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Your location</span>
+                <button onClick={refreshResolveLocation} className="text-amber-700 flex items-center gap-1 text-xs font-medium">
+                  <RefreshCw size={12} /> Retry
+                </button>
+              </div>
+              <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-sm flex items-center gap-2">
+                <Navigation size={16} className={resolveLocStatus === 'ok' ? 'text-emerald-600' : 'text-slate-400'} />
+                {resolveLocStatus === 'locating' && 'Getting GPS position…'}
+                {resolveLocStatus === 'ok' && resolveLoc && (
+                  <span className="font-mono tabular-nums">
+                    {resolveLoc.lat.toFixed(5)}, {resolveLoc.lng.toFixed(5)} {resolveLoc.accuracy ? `± ${Math.round(resolveLoc.accuracy)}m` : ''}
+                  </span>
+                )}
+                {resolveLocStatus === 'denied' && 'Location permission denied — enable it in app settings and retry'}
+                {resolveLocStatus === 'error' && `${resolveLocError} — move to open sky and retry`}
+                {resolveLocStatus === 'idle' && 'Waiting for location…'}
+              </div>
+              {resolveLocStatus === 'ok' && !resolveAccuracyOk && (
+                <p className="text-xs text-rose-600 mt-1">GPS accuracy must be within {MAX_ACCURACY_M}m to resolve — move to open sky and retry.</p>
+              )}
+              {resolveLocStatus === 'ok' && resolveAccuracyOk && !resolveDistanceOk && (
+                <p className="text-xs text-rose-600 mt-1">
+                  You're ~{Math.round(resolveDistance)}m from the reported location — you must be within {MAX_RESOLVE_DISTANCE_M}m to resolve it.
+                </p>
+              )}
+            </div>
+
             <PhotoCapture label="Resolution photo" photo={resolvePhoto} onCapture={setResolvePhoto} />
             <textarea
               value={resolveNote}
@@ -169,7 +227,7 @@ export default function ReportDetail() {
             />
             {error && <div className="text-xs text-rose-600">{error}</div>}
             <button
-              disabled={submitting || !resolvePhoto || !resolveNote.trim()}
+              disabled={!canSubmitResolution}
               onClick={handleSubmitResolution}
               className="w-full rounded-xl bg-emerald-600 disabled:bg-slate-300 text-white font-semibold py-3 text-sm hover:bg-emerald-700 transition-colors"
             >

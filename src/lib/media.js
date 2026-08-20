@@ -12,6 +12,20 @@ export async function capturePhoto() {
   return photo.dataUrl;
 }
 
+// Great-circle distance in meters — used client-side to give a Rectifier
+// instant feedback on how far they are from the reported location, ahead
+// of the authoritative (unbypassable) DB check in
+// resolutions_validate_proximity (0009_tehsil_wide_scope_and_geofencing.sql).
+export function distanceMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function toLocation(pos) {
   return {
     lat: pos.coords.latitude,

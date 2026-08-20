@@ -6,7 +6,10 @@ import 'leaflet/dist/leaflet.css';
 import { listReports } from '../lib/api/reports';
 import { listTehsils, listZones, listUcs } from '../lib/api/orgHierarchy';
 
-const STATUSES = ['SUBMITTED', 'PENDING', 'IN_PROGRESS', 'CLOSED', 'REOPENED'];
+const STATUSES = [
+  { value: 'PENDING', label: 'Reported' },
+  { value: 'CLOSED', label: 'Resolved' },
+];
 
 // Two-state per requirements: red = still open (any pre-CLOSED status),
 // green = resolved. Markers always sit at the report's own submission
@@ -101,8 +104,8 @@ export default function MapView() {
           <select value={status} onChange={(e) => updateParam('status', e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
             <option value="">All statuses</option>
             {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s.replace('_', ' ')}
+              <option key={s.value} value={s.value}>
+                {s.label}
               </option>
             ))}
           </select>

@@ -5,7 +5,10 @@ import { listReports } from '../lib/api/reports';
 import { listTehsils, listZones, listUcs, listIssueTypes } from '../lib/api/orgHierarchy';
 import ReportRow from '../components/ReportRow';
 
-const STATUSES = ['SUBMITTED', 'PENDING', 'IN_PROGRESS', 'CLOSED', 'REOPENED'];
+const STATUSES = [
+  { value: 'PENDING', label: 'Reported' },
+  { value: 'CLOSED', label: 'Resolved' },
+];
 
 export default function ReportsList() {
   const navigate = useNavigate();
@@ -85,8 +88,8 @@ export default function ReportsList() {
           <select value={status} onChange={(e) => updateParam('status', e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
             <option value="">All statuses</option>
             {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s.replace('_', ' ')}
+              <option key={s.value} value={s.value}>
+                {s.label}
               </option>
             ))}
           </select>

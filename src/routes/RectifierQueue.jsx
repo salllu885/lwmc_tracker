@@ -1,19 +1,42 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Image as ImageIcon, Clock } from 'lucide-react';
+import { useAuth } from '../lib/auth';
 import { listReports, listReportImages, getReportPhotoSignedUrl } from '../lib/api/reports';
+import { listAssignedUcs, listUcs } from '../lib/api/orgHierarchy';
 import { timeAgo } from '../lib/format';
 
-// Rectifier's landing screen: pending reports scoped to their assigned
-// UC(s) by RLS (reports_select in 0005_hierarchy_v2.sql) — no client-side
-// filtering needed beyond status. They pick which one to work from this
-// list, then resolve it on ReportDetail; there's no single pre-assigned
-// report the way Supervisor/ZO get stamped on creation.
+// Rectifier's landing screen: open (not-yet-closed) reports scoped to their
+// own Tehsil by RLS (0009_tehsil_wide_scope_and_geofencing.sql) — no longer
+// pinned to a single assigned UC. They can browse any UC in their Tehsil,
+// defaulting to their own assigned UC, then pick which report to work from
+// the list; there's no single pre-assigned report the way Supervisor/ZO
+// get stamped on creation.
 export default function RectifierQueue() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [reports, setReports] = useState([]);
   const [thumbnails, setThumbnails] = useState({});
   const [loading, setLoading] = useState(true);
+  const [ucs, setUcs] = useState([]);
+  const [ucId, setUcId] = useState('');
+
+  useEffect(() => {
+    if (!profile) return;
+    listAssignedUcs(profile.id).then(async (assigned) => {
+      const tehsilIds = [...new Set(assigned.map((u) => u.tehsil_id).filter(Boolean))];
+      if (tehsilIds.length === 0) {
+        setUcs(assigned);
+        if (assigned[0]) setUcId(assigned[0].id);
+        return;
+      }
+      const lists = await Promise.all(tehsilIds.map((tehsilId) => listUcs({ tehsilId, activeOnly: true })));
+      const defaultId = assigned.find((u) => u.is_default)?.id || assigned[0]?.id;
+      const merged = lists.flat().map((u) => ({ ...u, is_default: u.id === defaultId }));
+      setUcs(merged);
+      setUcId(defaultId || '');
+    });
+  }, [profile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -21,7 +44,7 @@ export default function RectifierQueue() {
     async function load() {
       setLoading(true);
       try {
-        const data = await listReports({ status: 'PENDING' });
+        const data = await listReports({ open: true, ucId: ucId || undefined });
         if (cancelled) return;
         setReports(data);
 
@@ -50,15 +73,26 @@ export default function RectifierQueue() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [ucId]);
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-bold text-slate-900">Resolve Queue</h2>
-        <p className="text-xs text-slate-400 mt-0.5">
-          {loading ? 'Loading…' : `${reports.length} pending in your area`}
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">Resolve Queue</h2>
+          <p className="text-xs text-slate-400 mt-0.5">{loading ? 'Loading…' : `${reports.length} pending`}</p>
+        </div>
+        {ucs.length > 1 && (
+          <select value={ucId} onChange={(e) => setUcId(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs font-mono bg-white">
+            <option value="">All UCs in Tehsil</option>
+            {ucs.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+                {u.is_default ? ' (default)' : ''}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {loading ? (

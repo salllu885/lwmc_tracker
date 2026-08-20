@@ -6,29 +6,40 @@ import { createReport } from '../lib/api/reports';
 import { listAssignedUcs, listUcs, listIssueTypes } from '../lib/api/orgHierarchy';
 import { listAssignments } from '../lib/api/users';
 import { captureLocation } from '../lib/media';
+import { enqueue, isNetworkError } from '../lib/offlineQueue';
 import PhotoCapture from '../components/PhotoCapture';
 
+const MAX_ACCURACY_M = 100;
+
 // ADMIN/AREA_MANAGER can file a report for ANY UC (reports_insert RLS has
-// no uc_id restriction for them — they can "act as anyone" per the role
-// model), so restricting the dropdown to their own uc_id assignment left
-// them with an empty, unfileable list — they're never UC-assigned, they're
-// Tehsil/district-scoped. ZO is similarly zone-scoped, not UC-assigned, so
-// it needs the zone's UC list instead. Supervisor/Surveyor stay on their
-// own assigned UC(s) only, since that's the actual RLS-enforced boundary
-// for those two roles.
+// no uc_id restriction for them), so restricting the dropdown to their own
+// uc_id assignment left them with an empty, unfileable list — they're never
+// UC-assigned, they're Tehsil/district-scoped. ZO is zone-scoped, not
+// UC-assigned, so it needs the zone's UC list. Supervisor/Surveyor are no
+// longer pinned to their single assigned UC either — RLS now scopes them
+// to every UC in their own Tehsil (0009_tehsil_wide_scope_and_geofencing),
+// with their actual assignment sorted first as the sensible default.
 async function resolveReportableUcs(profile) {
   if (profile.role === 'ADMIN' || profile.role === 'AREA_MANAGER') {
     return { ucs: await listUcs({ activeOnly: true }), autoSelect: false };
   }
-  const assigned = await listAssignedUcs(profile.id);
-  if (assigned.length) return { ucs: assigned, autoSelect: true };
   if (profile.role === 'ZO') {
     const rows = await listAssignments({ userId: profile.id });
     const zoneIds = [...new Set(rows.filter((r) => r.is_active && r.zone_id).map((r) => r.zone_id))];
     const lists = await Promise.all(zoneIds.map((zoneId) => listUcs({ zoneId, activeOnly: true })));
     return { ucs: lists.flat(), autoSelect: false };
   }
-  return { ucs: [], autoSelect: false };
+  const assigned = await listAssignedUcs(profile.id);
+  const tehsilIds = [...new Set(assigned.map((u) => u.tehsil_id).filter(Boolean))];
+  if (tehsilIds.length === 0) return { ucs: assigned, autoSelect: true };
+  const lists = await Promise.all(tehsilIds.map((tehsilId) => listUcs({ tehsilId, activeOnly: true })));
+  const assignedIds = new Set(assigned.map((u) => u.id));
+  const defaultId = assigned.find((u) => u.is_default)?.id;
+  const merged = lists
+    .flat()
+    .map((u) => ({ ...u, is_default: u.id === defaultId }))
+    .sort((a, b) => Number(b.is_default) - Number(a.is_default) || Number(assignedIds.has(b.id)) - Number(assignedIds.has(a.id)));
+  return { ucs: merged, autoSelect: true };
 }
 
 export default function NewReport() {
@@ -81,25 +92,32 @@ export default function NewReport() {
     refreshLocation();
   }, []);
 
-  const canSubmit = ucId && issueTypeId && photo && loc && locStatus === 'ok' && !submitting;
+  const accuracyOk = loc && loc.accuracy != null && loc.accuracy <= MAX_ACCURACY_M;
+  const canSubmit = ucId && issueTypeId && photo && loc && locStatus === 'ok' && accuracyOk && !submitting;
 
   async function handleSubmit() {
     setSubmitting(true);
     setError('');
+    const payload = {
+      ucId,
+      issueTypeId,
+      address,
+      description: note,
+      lat: loc?.lat ?? null,
+      lng: loc?.lng ?? null,
+      accuracy: loc?.accuracy ?? null,
+      reportedBy: profile.id,
+      photoDataUrl: photo,
+    };
     try {
-      const report = await createReport({
-        ucId,
-        issueTypeId,
-        address,
-        description: note,
-        lat: loc?.lat ?? null,
-        lng: loc?.lng ?? null,
-        accuracy: loc?.accuracy ?? null,
-        reportedBy: profile.id,
-        photoDataUrl: photo,
-      });
+      const report = await createReport(payload);
       navigate(`/reports/${report.id}`, { replace: true });
     } catch (e) {
+      if (isNetworkError(e)) {
+        enqueue('report', payload);
+        navigate('/', { replace: true });
+        return;
+      }
       setError(e.message || 'Failed to submit report');
     } finally {
       setSubmitting(false);
@@ -128,8 +146,8 @@ export default function NewReport() {
               <RefreshCw size={12} /> Retry
             </button>
           </div>
-          <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-sm flex items-center gap-2">
-            <Navigation size={16} className={locStatus === 'ok' ? 'text-emerald-600' : 'text-slate-400'} />
+          <div className={`rounded-xl border px-3 py-2 text-sm flex items-center gap-2 ${accuracyOk ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'}`}>
+            <Navigation size={16} className={locStatus === 'ok' && accuracyOk ? 'text-emerald-600' : 'text-slate-400'} />
             {locStatus === 'locating' && 'Getting GPS position…'}
             {locStatus === 'ok' && loc && (
               <span className="font-mono tabular-nums">
@@ -140,6 +158,11 @@ export default function NewReport() {
             {locStatus === 'error' && `${locError} — move to open sky and retry`}
             {locStatus === 'idle' && 'Waiting for location…'}
           </div>
+          {locStatus === 'ok' && !accuracyOk && (
+            <p className="text-xs text-rose-600 mt-1">
+              GPS accuracy must be within {MAX_ACCURACY_M}m to submit — move to open sky and retry.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -197,9 +220,9 @@ export default function NewReport() {
           />
         </div>
 
-        {!canSubmit && !submitting && (!photo || !loc || locStatus !== 'ok') && (
+        {!canSubmit && !submitting && (!photo || !loc || locStatus !== 'ok' || !accuracyOk) && (
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            A photo and a GPS lock are both required before you can submit — address is not a substitute.
+            A photo and an accurate GPS lock (within {MAX_ACCURACY_M}m) are both required before you can submit — address is not a substitute.
           </p>
         )}
 

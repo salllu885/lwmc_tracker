@@ -18,7 +18,12 @@ const REPORT_SELECT = `
 export async function listReports(filters = {}) {
   let q = supabase.from('reports').select(REPORT_SELECT).order('created_at', { ascending: false });
 
-  if (filters.status) q = q.eq('status', filters.status);
+  // Status is a two-state concept in the UI (Reported / Resolved) even
+  // though the DB enum still has legacy intermediate values — `open: true`
+  // means "not yet closed" (catches PENDING and any stray legacy status),
+  // `status` remains an exact match for the CLOSED case and internal use.
+  if (filters.open) q = q.neq('status', 'CLOSED');
+  else if (filters.status) q = q.eq('status', filters.status);
   if (filters.tehsilId) q = q.eq('tehsil_id', filters.tehsilId);
   if (filters.zoneId) q = q.eq('zone_id', filters.zoneId);
   if (filters.ucId) q = q.eq('uc_id', filters.ucId);
@@ -123,11 +128,6 @@ export async function createReport({ ucId, issueTypeId, address, description, la
   }
 
   return report;
-}
-
-export async function startResolving(reportId) {
-  const { error } = await supabase.from('reports').update({ status: 'IN_PROGRESS' }).eq('id', reportId);
-  if (error) throw error;
 }
 
 // Filing the resolution row also flips the report to CLOSED — see the

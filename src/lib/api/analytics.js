@@ -20,20 +20,19 @@ export async function fetchReportsForAnalytics(filters = {}) {
   return data;
 }
 
+// Two states only — "reported" is everything not yet CLOSED, regardless of
+// which legacy status value a pre-simplification row happens to carry.
 export function summarize(reports) {
   const total = reports.length;
   const closed = reports.filter((r) => r.status === 'CLOSED').length;
-  const pending = reports.filter((r) => r.status === 'PENDING').length;
-  const inProgress = reports.filter((r) => r.status === 'IN_PROGRESS').length;
+  const pending = total - closed;
   const pct = (n) => (total ? Math.round((n / total) * 1000) / 10 : 0);
   return {
     total,
     closed,
     pending,
-    inProgress,
     closureRate: pct(closed),
     pendingRate: pct(pending),
-    inProgressRate: pct(inProgress),
   };
 }
 

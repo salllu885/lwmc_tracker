@@ -1,7 +1,8 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { ClipboardList, CheckCircle2, LayoutDashboard, Map as MapIcon, Radar, CalendarCheck, BarChart3, Users, LogOut } from 'lucide-react';
+import { ClipboardList, CheckCircle2, LayoutDashboard, Map as MapIcon, Radar, CalendarCheck, BarChart3, Users, LogOut, CloudUpload } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useLocationTracking } from '../lib/services/locationTracking';
+import { useOfflineQueueSync } from '../lib/services/offlineSync';
 
 // Mirrors the requirements doc's §51 "Main Navigation Summary" per role.
 // Role is a permission TIER now, not a job title (see 0005_hierarchy_v2.sql)
@@ -69,6 +70,7 @@ export default function NavShell({ children }) {
   const navigate = useNavigate();
   const items = NAV_BY_ROLE[role] || [];
   useLocationTracking(profile?.id, role);
+  const { pending, syncing, sync } = useOfflineQueueSync();
 
   async function handleLogout() {
     await logout();
@@ -84,6 +86,16 @@ export default function NavShell({ children }) {
             {profile?.full_name} · {role}
           </span>
         </div>
+        {pending > 0 && (
+          <button
+            onClick={sync}
+            disabled={syncing}
+            className="mx-2 mb-2 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium bg-amber-400/10 text-amber-300 hover:bg-amber-400/20"
+          >
+            <CloudUpload size={14} className={syncing ? 'animate-pulse' : ''} />
+            {syncing ? 'Syncing…' : `${pending} saved offline — sync`}
+          </button>
+        )}
         <nav className="flex-1 px-2 space-y-1">
           {items.map((item) => (
             <NavLink
@@ -116,6 +128,12 @@ export default function NavShell({ children }) {
             <LogOut size={18} className="text-slate-400" />
           </button>
         </div>
+        {pending > 0 && (
+          <button onClick={sync} disabled={syncing} className="w-full flex items-center justify-center gap-2 px-4 py-1.5 text-[11px] font-medium bg-amber-400/10 text-amber-300">
+            <CloudUpload size={12} className={syncing ? 'animate-pulse' : ''} />
+            {syncing ? 'Syncing…' : `${pending} saved offline — tap to sync`}
+          </button>
+        )}
       </header>
 
       <main className="flex-1 w-full max-w-5xl mx-auto p-4 pb-20 md:pb-4">{children}</main>
