@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plus, X } from 'lucide-react';
-import { listAssignments, createAssignment, endAssignment, listUsers } from '../../lib/api/users';
+import { listAssignments, createAssignment, endAssignment, listUsers, setDefaultUc } from '../../lib/api/users';
 import { listTehsils, listZones, listUcs } from '../../lib/api/orgHierarchy';
 import { formatDateTime } from '../../lib/format';
 
@@ -58,6 +58,11 @@ export default function Assignments() {
     await refresh();
   }
 
+  async function handleSetDefault(a) {
+    await setDefaultUc(a.user_id, a.id);
+    await refresh();
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -81,6 +86,7 @@ export default function Assignments() {
                 <th className="py-2 px-3">Scope</th>
                 <th className="py-2 px-3">Since</th>
                 <th className="py-2 px-3">Status</th>
+                <th className="py-2 px-3">Default UC</th>
                 <th className="py-2 px-3" />
               </tr>
             </thead>
@@ -99,6 +105,19 @@ export default function Assignments() {
                     >
                       {a.is_active ? 'Active' : 'Ended'}
                     </span>
+                  </td>
+                  <td className="py-2 px-3">
+                    {a.uc_id && a.is_active ? (
+                      a.is_default ? (
+                        <span className="text-[10px] font-semibold text-amber-700">★ Default</span>
+                      ) : (
+                        <button onClick={() => handleSetDefault(a)} className="text-[10px] font-medium text-slate-400 hover:text-amber-700">
+                          Set default
+                        </button>
+                      )
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td className="py-2 px-3">
                     {a.is_active && (

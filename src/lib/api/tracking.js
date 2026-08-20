@@ -31,8 +31,28 @@ export async function listLatestPings({ withinMinutes = 30 } = {}) {
   return Array.from(latest.values());
 }
 
+// Full ping history for one user (not just their latest) — used to draw the
+// breadcrumb trail on the Live Tracking detail panel.
+export async function listPingsForUser(userId, { sinceHours = 12 } = {}) {
+  const since = new Date(Date.now() - sinceHours * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('location_pings')
+    .select('latitude, longitude, recorded_at')
+    .eq('user_id', userId)
+    .gte('recorded_at', since)
+    .order('recorded_at', { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
+// present is only true once activity_count exceeds the 5-per-day
+// threshold (see attendance_daily in 0005_hierarchy_v2.sql) — a returned
+// row does NOT by itself mean "present", callers must check the flag.
 export async function listAttendance({ dateFrom, dateTo } = {}) {
-  let q = supabase.from('attendance_daily').select('user_id, activity_date, present').order('activity_date', { ascending: false });
+  let q = supabase
+    .from('attendance_daily')
+    .select('user_id, activity_date, activity_count, present')
+    .order('activity_date', { ascending: false });
   if (dateFrom) q = q.gte('activity_date', dateFrom);
   if (dateTo) q = q.lte('activity_date', dateTo);
   const { data, error } = await q;

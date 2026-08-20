@@ -9,19 +9,22 @@
 // touching anything with the privileged service-role client.
 //
 // Manage scope (who may create which role, and where):
-//   ADMIN        anywhere in the district
-//   AREA_MANAGER only within their own assigned Tehsil/Town — may create
-//                ZO / SUPERVISOR / SURVEYOR / RECTIFIER there
-//   ZO           only within their own assigned Zone — may create
-//                SUPERVISOR / SURVEYOR / RECTIFIER there
+//   ADMIN        anywhere in the district, any role
+//   AREA_MANAGER only within their own assigned Tehsil/Town — which roles
+//                they may create there depends on their `authority_level`
+//                (see 0008_authority_levels.sql — GM LWMC/Town Manager/AC
+//                are admin-editable rows, not hardcoded per role tier)
+//   ZO           only within their own assigned Zone — same idea, via
+//                their own authority level (default "Zone Officer")
 //   everyone else (Supervisor/Surveyor/Rectifier) — no manage rights at
 //                all, per "Supervisor can't add/remove, it's up to ZO"
 // Only ADMIN may create another ADMIN or AREA_MANAGER account (district-
-// level appointments — DC, CO MCL, GM LWMC, WASA, AC, TM, ...); a ZO or
-// Area Manager is restricted to the roles below by MANAGER_CREATABLE_ROLES
-// / ZO_CREATABLE_ROLES. The very first Admin still has to be created by
-// hand in the Supabase dashboard, since there's no Admin yet to call this
-// function — see supabase/seed.sql.
+// level appointments — DC, CO MCL, GM LWMC, WASA, AC, TM, ...). A caller
+// with no authority_id assigned yet (e.g. pre-migration accounts) falls
+// back to MANAGER_CREATABLE_ROLES / ZO_CREATABLE_ROLES so nothing breaks
+// before an admin assigns them one. The very first Admin still has to be
+// created by hand in the Supabase dashboard, since there's no Admin yet to
+// call this function — see supabase/seed.sql.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
@@ -30,8 +33,8 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const EMAIL_DOMAIN = Deno.env.get('SYNTHETIC_EMAIL_DOMAIN') ?? 'lwmc.internal';
 
 const ROLES = ['ADMIN', 'AREA_MANAGER', 'ZO', 'SUPERVISOR', 'SURVEYOR', 'RECTIFIER'];
-// Roles a ZO or Area Manager is permitted to hand out; only ADMIN can create
-// another ADMIN or AREA_MANAGER (checked below, not just listed here).
+// Fallback only — used when the caller has no authority_id assigned yet.
+// The real, admin-editable source of truth is the authority_levels table.
 const MANAGER_CREATABLE_ROLES = ['ZO', 'SUPERVISOR', 'SURVEYOR', 'RECTIFIER'];
 const ZO_CREATABLE_ROLES = ['SUPERVISOR', 'SURVEYOR', 'RECTIFIER'];
 
@@ -99,7 +102,7 @@ Deno.serve(async (req) => {
 
   const { data: callerProfile, error: profileErr } = await callerClient
     .from('profiles')
-    .select('id, role, is_active')
+    .select('id, role, is_active, authority_id')
     .eq('id', userData.user.id)
     .single();
 
@@ -117,7 +120,7 @@ Deno.serve(async (req) => {
     return json({ error: 'Invalid JSON body' }, 400);
   }
 
-  const { username, full_name, phone, role, designation, password, assignment } = body as {
+  const { username, full_name, phone, role, designation, password, assignment, authority_id } = body as {
     username?: string;
     full_name?: string;
     phone?: string;
@@ -125,6 +128,7 @@ Deno.serve(async (req) => {
     designation?: string;
     password?: string;
     assignment?: { tehsil_id?: string; zone_id?: string; uc_id?: string };
+    authority_id?: string;
   };
 
   if (!username || !full_name || !role || !password) {
@@ -137,12 +141,40 @@ Deno.serve(async (req) => {
     return json({ error: 'password must be at least 8 characters' }, 400);
   }
 
-  // Scope check #1: which roles this caller is allowed to hand out at all.
-  if (callerProfile.role === 'AREA_MANAGER' && !MANAGER_CREATABLE_ROLES.includes(role)) {
-    return json({ error: `An Area Manager can only create: ${MANAGER_CREATABLE_ROLES.join(', ')}` }, 403);
+  // Scope check #1: which roles this caller is allowed to hand out at all —
+  // driven by their authority_level row (admin-editable) when they have
+  // one, falling back to the hardcoded default set otherwise.
+  if (callerProfile.role === 'AREA_MANAGER' || callerProfile.role === 'ZO') {
+    let creatableRoles = callerProfile.role === 'AREA_MANAGER' ? MANAGER_CREATABLE_ROLES : ZO_CREATABLE_ROLES;
+    if (callerProfile.authority_id) {
+      const { data: authRow } = await callerClient
+        .from('authority_levels')
+        .select('creatable_roles, is_active')
+        .eq('id', callerProfile.authority_id)
+        .single();
+      if (authRow?.is_active && Array.isArray(authRow.creatable_roles)) {
+        creatableRoles = authRow.creatable_roles;
+      }
+    }
+    if (!creatableRoles.includes(role)) {
+      return json({ error: `Your authority level can only create: ${creatableRoles.join(', ')}` }, 403);
+    }
   }
-  if (callerProfile.role === 'ZO' && !ZO_CREATABLE_ROLES.includes(role)) {
-    return json({ error: `A ZO can only create: ${ZO_CREATABLE_ROLES.join(', ')}` }, 403);
+
+  // If the caller is assigning the new hire an authority level, it must be
+  // a currently-active level meant for that role tier — otherwise a typo'd
+  // or stale id would silently grant/deny the wrong creatable-role set.
+  if (authority_id) {
+    const { data: newAuthRow, error: authErr } = await callerClient
+      .from('authority_levels')
+      .select('role_tier, is_active')
+      .eq('id', authority_id)
+      .single();
+    if (authErr || !newAuthRow) return json({ error: 'Unknown authority level' }, 400);
+    if (!newAuthRow.is_active) return json({ error: 'That authority level is inactive' }, 400);
+    if (newAuthRow.role_tier !== role) {
+      return json({ error: `That authority level is for ${newAuthRow.role_tier}, not ${role}` }, 400);
+    }
   }
 
   // Scope check #2: IF the caller passed an assignment inline with
@@ -206,6 +238,7 @@ Deno.serve(async (req) => {
     phone: phone ?? null,
     role,
     designation: designation ?? null,
+    authority_id: authority_id ?? null,
   });
 
   if (insertProfileErr) {

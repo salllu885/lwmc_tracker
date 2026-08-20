@@ -29,7 +29,7 @@ export default function EntityTable({ title, columns, fields, list, onCreate, on
   function openCreate() {
     const initial = {};
     fields.forEach((f) => {
-      initial[f.key] = f.default ?? '';
+      initial[f.key] = f.default ?? (f.type === 'multiselect' ? [] : '');
     });
     setForm(initial);
     setError('');
@@ -151,6 +151,28 @@ export default function EntityTable({ title, columns, fields, list, onCreate, on
                         </option>
                       ))}
                     </select>
+                  ) : f.type === 'multiselect' ? (
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {f.options.map((o) => {
+                        const checked = (form[f.key] || []).includes(o.value);
+                        return (
+                          <button
+                            type="button"
+                            key={o.value}
+                            onClick={() => {
+                              const cur = form[f.key] || [];
+                              const next = checked ? cur.filter((v) => v !== o.value) : [...cur, o.value];
+                              setForm((s) => ({ ...s, [f.key]: next }));
+                            }}
+                            className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                              checked ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300'
+                            }`}
+                          >
+                            {o.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   ) : (
                     <input
                       value={form[f.key] ?? ''}

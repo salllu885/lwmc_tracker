@@ -42,12 +42,27 @@ export async function listUcs({ zoneId, tehsilId, activeOnly = false } = {}) {
 export async function listAssignedUcs(userId) {
   const { data, error } = await supabase
     .from('user_assignments')
-    .select('uc:ucs(id,name,code,zone_id,tehsil_id)')
+    .select('is_default, uc:ucs(id,name,code,zone_id,tehsil_id)')
     .eq('user_id', userId)
     .eq('is_active', true)
     .not('uc_id', 'is', null);
   if (error) throw error;
-  return (data || []).map((row) => row.uc).filter(Boolean);
+  return (data || [])
+    .filter((row) => row.uc)
+    .sort((a, b) => Number(b.is_default) - Number(a.is_default))
+    .map((row) => ({ ...row.uc, is_default: row.is_default }));
+}
+
+// Admin-editable "who can create whom" list — see 0008_authority_levels.sql.
+// Not tied to designation (free text) so permission checks never depend on
+// how someone typed their job title.
+export async function listAuthorityLevels({ roleTier, activeOnly = false } = {}) {
+  let q = supabase.from('authority_levels').select('*').order('name');
+  if (roleTier) q = q.eq('role_tier', roleTier);
+  if (activeOnly) q = q.eq('is_active', true);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data;
 }
 
 export async function listIssueTypes({ activeOnly = false } = {}) {

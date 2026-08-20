@@ -23,6 +23,8 @@ export default function ReportsList() {
   const zoneId = searchParams.get('zone') || '';
   const ucId = searchParams.get('uc') || '';
   const issueTypeId = searchParams.get('issue') || '';
+  const dateFrom = searchParams.get('from') || '';
+  const dateTo = searchParams.get('to') || '';
 
   useEffect(() => {
     listTehsils({ activeOnly: true }).then(setTehsils);

@@ -188,19 +188,27 @@ create policy location_pings_select on public.location_pings for select to authe
 );
 
 -- ── Attendance, derived from activity — no table to keep in sync, just a
--- view over reports/resolutions ("reported = present") ─────────────────
--- security_invoker is required here: without it the view would run as its
--- owner and silently bypass the RLS on reports/resolutions above.
+-- view over reports/resolutions. Present means MORE THAN 5 reports filed
+-- + resolutions closed that day, combined — logging in alone doesn't
+-- count. security_invoker is required here: without it the view would
+-- run as its owner and silently bypass the RLS on reports/resolutions.
+--
+-- The per-source subqueries group by (user_id, date) and count(*) BEFORE
+-- the union — grouping only after a plain `union` (distinct) would have
+-- collapsed every same-day report from one user down to a single row,
+-- making an accurate count impossible.
 
 create or replace view public.attendance_daily
 with (security_invoker = true) as
-select user_id, activity_date, true as present
+select user_id, activity_date, sum(cnt) as activity_count, (sum(cnt) > 5) as present
 from (
-  select reported_by as user_id, (created_at at time zone 'Asia/Karachi')::date as activity_date
+  select reported_by as user_id, (created_at at time zone 'Asia/Karachi')::date as activity_date, count(*) as cnt
   from public.reports
-  union
-  select resolved_by as user_id, (resolved_at at time zone 'Asia/Karachi')::date as activity_date
+  group by reported_by, (created_at at time zone 'Asia/Karachi')::date
+  union all
+  select resolved_by as user_id, (resolved_at at time zone 'Asia/Karachi')::date as activity_date, count(*) as cnt
   from public.resolutions
+  group by resolved_by, (resolved_at at time zone 'Asia/Karachi')::date
 ) activity
 group by user_id, activity_date;
 

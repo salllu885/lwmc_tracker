@@ -19,6 +19,7 @@ export default function NewReport() {
   const [photo, setPhoto] = useState(null);
   const [loc, setLoc] = useState(null);
   const [locStatus, setLocStatus] = useState('idle');
+  const [locError, setLocError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -36,12 +37,19 @@ export default function NewReport() {
 
   async function refreshLocation() {
     setLocStatus('locating');
+    setLocError('');
     try {
       const result = await captureLocation();
       setLoc(result);
       setLocStatus('ok');
     } catch (e) {
-      setLocStatus('denied');
+      const msg = (e?.message || '').toLowerCase();
+      if (msg.includes('denied') || msg.includes('permission')) {
+        setLocStatus('denied');
+      } else {
+        setLocStatus('error');
+        setLocError(e?.message || 'Could not get a GPS fix');
+      }
     }
   }
 
@@ -49,7 +57,7 @@ export default function NewReport() {
     refreshLocation();
   }, []);
 
-  const canSubmit = ucId && issueTypeId && (address.trim() || loc) && !submitting;
+  const canSubmit = ucId && issueTypeId && photo && loc && locStatus === 'ok' && !submitting;
 
   async function handleSubmit() {
     setSubmitting(true);
@@ -81,13 +89,17 @@ export default function NewReport() {
 
       <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Photo</div>
-          <PhotoCapture label="Capture photo" photo={photo} onCapture={setPhoto} />
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+            Photo <span className="text-rose-500">*</span>
+          </div>
+          <PhotoCapture label="Capture photo (required)" photo={photo} onCapture={setPhoto} />
         </div>
 
         <div>
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2 flex items-center justify-between">
-            <span>Location</span>
+            <span>
+              Location <span className="text-rose-500">*</span>
+            </span>
             <button onClick={refreshLocation} className="text-amber-700 flex items-center gap-1 text-xs font-medium">
               <RefreshCw size={12} /> Retry
             </button>
@@ -100,7 +112,8 @@ export default function NewReport() {
                 {loc.lat.toFixed(5)}, {loc.lng.toFixed(5)} {loc.accuracy ? `± ${Math.round(loc.accuracy)}m` : ''}
               </span>
             )}
-            {locStatus === 'denied' && 'Location permission denied — add address below'}
+            {locStatus === 'denied' && 'Location permission denied — enable it in app settings and retry'}
+            {locStatus === 'error' && `${locError} — move to open sky and retry`}
             {locStatus === 'idle' && 'Waiting for location…'}
           </div>
         </div>
@@ -117,6 +130,7 @@ export default function NewReport() {
               {ucs.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.name}
+                  {u.is_default ? ' (default)' : ''}
                 </option>
               ))}
             </select>
@@ -149,14 +163,20 @@ export default function NewReport() {
         </div>
 
         <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Address (manual)</label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Landmark (optional)</label>
           <input
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            placeholder="Street / landmark"
+            placeholder="Street / landmark — GPS coordinates are recorded automatically"
             className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
+
+        {!canSubmit && !submitting && (!photo || !loc || locStatus !== 'ok') && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            A photo and a GPS lock are both required before you can submit — address is not a substitute.
+          </p>
+        )}
 
         <button
           disabled={!canSubmit}

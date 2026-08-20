@@ -20,7 +20,9 @@ import Zones from './routes/Admin/Zones';
 import Ucs from './routes/Admin/Ucs';
 import IssueTypes from './routes/Admin/IssueTypes';
 import Users from './routes/Admin/Users';
+import UserDetail from './routes/Admin/UserDetail';
 import Assignments from './routes/Admin/Assignments';
+import AuthorityLevels from './routes/Admin/AuthorityLevels';
 
 function AuthedShell() {
   return (
@@ -45,7 +47,9 @@ function AuthedShell() {
             <Route path="ucs" element={<Ucs />} />
             <Route path="issue-types" element={<IssueTypes />} />
             <Route path="users" element={<Users />} />
+            <Route path="users/:id" element={<UserDetail />} />
             <Route path="assignments" element={<Assignments />} />
+            <Route path="authority-levels" element={<AuthorityLevels />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

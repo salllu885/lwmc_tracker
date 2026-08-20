@@ -8,6 +8,7 @@ const TABS = [
   { to: '/admin/issue-types', label: 'Issue Types' },
   { to: '/admin/users', label: 'Users' },
   { to: '/admin/assignments', label: 'Assignments' },
+  { to: '/admin/authority-levels', label: 'Authority Levels' },
 ];
 
 export default function AdminLayout() {

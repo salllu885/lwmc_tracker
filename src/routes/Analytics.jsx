@@ -7,7 +7,7 @@ import { listAttendance, listDailyDistance } from '../lib/api/tracking';
 import { listReports, listReportImages, listResolutions, getReportPhotoSignedUrl } from '../lib/api/reports';
 import StatCard from '../components/StatCard';
 import { exportCsv, exportExcel, exportPdf, exportReportsPdf, urlToDataUrl } from '../lib/export';
-import { ClipboardList, CheckCircle2, TrendingUp, Download, FileImage } from 'lucide-react';
+import { ClipboardList, CheckCircle2, TrendingUp, Download, FileImage, Trophy, Footprints, Award } from 'lucide-react';
 
 const DETAILED_PDF_LIMIT = 150;
 
@@ -94,6 +94,13 @@ export default function Analytics() {
   const fieldActivityRows = fieldActivity
     .map((r) => ({ ...r, name: userLookup(allFieldUsers, r.userId) }))
     .sort((a, b) => b.km - a.km);
+
+  // Leaderboards (requirements §G/11): most-active and most-traveled
+  // Surveyor within the current filter window, plus the ZO with the best
+  // closure rate among those who actually have reports in scope.
+  const topSurveyor = bySurveyor.find((r) => r.total > 0);
+  const mostTraveledSurveyor = fieldActivityRows.find((r) => surveyors.some((s) => s.id === r.userId) && r.km > 0);
+  const bestZo = [...byZo].filter((r) => r.total > 0).sort((a, b) => b.closureRate - a.closureRate || b.total - a.total)[0];
 
   // The one place the app produces a photo-carrying PDF: fetches the full
   // (filtered) report rows plus their before/after photos, resolves each
@@ -245,6 +252,22 @@ export default function Analytics() {
         <StatCard label="Closure rate" value={`${summary.closureRate}%`} icon={<CheckCircle2 size={16} />} tone="emerald" />
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <LeaderboardCard
+          icon={<Trophy size={16} />}
+          label="Most active Surveyor"
+          name={topSurveyor?.label}
+          metric={topSurveyor ? `${topSurveyor.total} reports filed` : null}
+        />
+        <LeaderboardCard
+          icon={<Footprints size={16} />}
+          label="Most-traveled Surveyor"
+          name={mostTraveledSurveyor?.name}
+          metric={mostTraveledSurveyor ? `${mostTraveledSurveyor.km.toFixed(1)} km (30d)` : null}
+        />
+        <LeaderboardCard icon={<Award size={16} />} label="Best-performing ZO" name={bestZo?.label} metric={bestZo ? `${bestZo.closureRate}% closure rate` : null} />
+      </div>
+
       <ChartCard title="Reports by issue type">
         {byIssueType.length ? (
           <ResponsiveContainer width="100%" height={200}>
@@ -311,6 +334,25 @@ export default function Analytics() {
               ))}
             </tbody>
           </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LeaderboardCard({ icon, label, name, metric }) {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-4 flex items-center gap-3">
+      <div className="w-10 h-10 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">{icon}</div>
+      <div className="min-w-0">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+        {name ? (
+          <>
+            <div className="text-sm font-bold text-slate-900 truncate">{name}</div>
+            <div className="text-[11px] text-slate-500">{metric}</div>
+          </>
+        ) : (
+          <div className="text-xs text-slate-400">No data yet</div>
         )}
       </div>
     </div>

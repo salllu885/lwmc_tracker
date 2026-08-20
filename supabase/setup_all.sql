@@ -1,6 +1,3 @@
--- Combined setup script: safe to paste and run more than once.
--- (Same as running 0001, 0002, 0003, 0004, 0005, then seed.sql in order.)
-
 -- Field Issue Reporting & Rectification Management System
 -- 0001_init: core schema (enums, tables, indexes)
 
@@ -193,7 +190,6 @@ create table if not exists public.notifications (
   created_at timestamptz not null default now()
 );
 create index if not exists notifications_user_id_idx on public.notifications(user_id, is_read);
-
 -- 0002_rls: helper functions + Row Level Security policies
 --
 -- Every visibility rule from the requirements doc is enforced here, in the
@@ -440,7 +436,6 @@ drop policy if exists notifications_update_self on public.notifications;
 create policy notifications_update_self on public.notifications for update to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 -- No client insert policy — rows are written by triggers only.
-
 -- 0003_triggers: auto-assignment, report numbering, audit trail,
 -- notifications, and a couple of integrity guards RLS alone can't express.
 
@@ -645,7 +640,6 @@ $$;
 create or replace trigger user_assignments_validate_trigger
 before insert or update on public.user_assignments
 for each row execute function public.validate_user_assignment();
-
 -- 0004_storage: photo evidence bucket + access policies
 --
 -- Path convention: <report_id>/before.jpg and <report_id>/resolution.jpg.
@@ -668,7 +662,6 @@ create policy report_photos_insert on storage.objects for insert to authenticate
   bucket_id = 'report-photos'
   and private.can_view_report((split_part(name, '/', 1))::uuid)
 );
-
 -- 0005_hierarchy_v2: District/Town hierarchy, live location tracking, and
 -- attendance/distance derived from activity.
 --
@@ -859,19 +852,27 @@ create policy location_pings_select on public.location_pings for select to authe
 );
 
 -- ── Attendance, derived from activity — no table to keep in sync, just a
--- view over reports/resolutions ("reported = present") ─────────────────
--- security_invoker is required here: without it the view would run as its
--- owner and silently bypass the RLS on reports/resolutions above.
+-- view over reports/resolutions. Present means MORE THAN 5 reports filed
+-- + resolutions closed that day, combined — logging in alone doesn't
+-- count. security_invoker is required here: without it the view would
+-- run as its owner and silently bypass the RLS on reports/resolutions.
+--
+-- The per-source subqueries group by (user_id, date) and count(*) BEFORE
+-- the union — grouping only after a plain `union` (distinct) would have
+-- collapsed every same-day report from one user down to a single row,
+-- making an accurate count impossible.
 
 create or replace view public.attendance_daily
 with (security_invoker = true) as
-select user_id, activity_date, true as present
+select user_id, activity_date, sum(cnt) as activity_count, (sum(cnt) > 5) as present
 from (
-  select reported_by as user_id, (created_at at time zone 'Asia/Karachi')::date as activity_date
+  select reported_by as user_id, (created_at at time zone 'Asia/Karachi')::date as activity_date, count(*) as cnt
   from public.reports
-  union
-  select resolved_by as user_id, (resolved_at at time zone 'Asia/Karachi')::date as activity_date
+  group by reported_by, (created_at at time zone 'Asia/Karachi')::date
+  union all
+  select resolved_by as user_id, (resolved_at at time zone 'Asia/Karachi')::date as activity_date, count(*) as cnt
   from public.resolutions
+  group by resolved_by, (resolved_at at time zone 'Asia/Karachi')::date
 ) activity
 group by user_id, activity_date;
 
@@ -935,7 +936,78 @@ on conflict (id) do nothing;
 -- yet at this point in the combined setup_all.sql (0005 runs before
 -- seed.sql, which is what actually creates it), so the link is done in
 -- seed.sql instead, right after the tehsil insert.
+-- Amendment D: report submission must carry a real GPS fix — manual address
+-- alone is no longer an acceptable substitute. NOT VALID so pre-existing rows
+-- (created before this rule existed) aren't retroactively broken; the check
+-- still applies to every INSERT/UPDATE going forward.
+alter table public.reports
+  add constraint reports_location_required
+  check (latitude is not null and longitude is not null) not valid;
+-- Amendment: a user with more than one active UC assignment (e.g. a
+-- Supervisor covering two UCs) needs one marked as their default so the New
+-- Issue form can auto-select it instead of picking whichever row happened to
+-- come back first. At most one default per user, enforced with a partial
+-- unique index (only counts active, default rows).
+alter table public.user_assignments add column if not exists is_default boolean not null default false;
 
+create unique index if not exists user_assignments_one_default_per_user
+  on public.user_assignments(user_id)
+  where is_default and is_active;
+-- Point H, revised per user direction: designation stays free text (a
+-- cosmetic job title), but WHICH roles an AREA_MANAGER/ZO-tier user can
+-- create is no longer hardcoded per role tier — it's driven by a separate,
+-- admin-editable "authority level". Admin can add/remove authority levels
+-- and change their creatable_roles set at any time (Admin -> Authority
+-- Levels), instead of the exact GM LWMC/Town Manager/AC permission matrix
+-- being nailed down in code.
+create table if not exists public.authority_levels (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  role_tier app_role not null,
+  creatable_roles app_role[] not null default '{}',
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+alter table public.authority_levels enable row level security;
+grant select on public.authority_levels to authenticated;
+grant insert, update, delete on public.authority_levels to authenticated;
+
+drop policy if exists authority_levels_select on public.authority_levels;
+create policy authority_levels_select on public.authority_levels for select to authenticated using (true);
+
+drop policy if exists authority_levels_manage on public.authority_levels;
+create policy authority_levels_manage on public.authority_levels for all to authenticated
+  using (private.current_role() = 'ADMIN')
+  with check (private.current_role() = 'ADMIN');
+
+alter table public.profiles add column if not exists authority_id uuid references public.authority_levels(id);
+
+-- Seeded to match what was previously hardcoded in the admin-create-user
+-- Edge Function, so behavior doesn't regress on day one — admin can freely
+-- edit/add/deactivate these afterward from the new Admin screen.
+insert into public.authority_levels (name, role_tier, creatable_roles) values
+  ('GM LWMC', 'AREA_MANAGER', array['ZO','SUPERVISOR','SURVEYOR','RECTIFIER']::app_role[]),
+  ('Town Manager', 'AREA_MANAGER', array['SUPERVISOR','SURVEYOR','RECTIFIER']::app_role[]),
+  ('AC', 'AREA_MANAGER', array['ZO','SUPERVISOR','SURVEYOR','RECTIFIER']::app_role[]),
+  ('Zone Officer', 'ZO', array['SUPERVISOR','SURVEYOR','RECTIFIER']::app_role[])
+on conflict (name) do nothing;
+
+-- authority_id is a permission grant (it decides what its holder can in
+-- turn create) — same sensitivity as role/username, Admin-only to change.
+create or replace function public.profiles_protect_privileged_fields()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if (new.role is distinct from old.role or new.username is distinct from old.username or new.authority_id is distinct from old.authority_id)
+     and private.current_role() <> 'ADMIN' then
+    raise exception 'Only an admin can change role, username, or authority level.';
+  end if;
+  if new.is_active is distinct from old.is_active and not private.user_in_manage_scope(old.id) then
+    raise exception 'You do not have permission to activate or deactivate this user.';
+  end if;
+  return new;
+end;
+$$;
 -- Dummy organisational data (requirements doc §49) so the app can be
 -- exercised end-to-end before real Tehsil/Zone/UC data is entered.
 -- Safe to re-run: fixed ids + ON CONFLICT DO NOTHING.

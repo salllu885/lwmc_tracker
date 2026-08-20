@@ -68,7 +68,8 @@ export default function Attendance() {
       .finally(() => setLoading(false));
   }, [userId, monthDate]);
 
-  const presentDates = useMemo(() => new Set(attendance.map((r) => r.activity_date)), [attendance]);
+  const presentDates = useMemo(() => new Set(attendance.filter((r) => r.present).map((r) => r.activity_date)), [attendance]);
+  const activityCountByDate = useMemo(() => new Map(attendance.map((r) => [r.activity_date, r.activity_count])), [attendance]);
   const distanceByDate = useMemo(() => new Map(distance.map((r) => [r.activity_date, r.distance_km])), [distance]);
   const totalDistance = useMemo(() => distance.reduce((sum, r) => sum + Number(r.distance_km || 0), 0), [distance]);
 
@@ -98,7 +99,7 @@ export default function Attendance() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-lg font-bold text-slate-900">Attendance</h2>
-          <p className="text-xs text-slate-400 mt-0.5">Derived from activity — present on any day with ≥1 filed or resolved report.</p>
+          <p className="text-xs text-slate-400 mt-0.5">Derived from activity — present on any day with more than 5 reports filed or resolved combined.</p>
         </div>
         <select
           value={userId}
@@ -153,6 +154,7 @@ export default function Attendance() {
               const isPresent = presentDates.has(iso);
               const isToday = iso === today;
               const km = distanceByDate.get(iso);
+              const count = activityCountByDate.get(iso);
               const tone = isFuture ? 'bg-slate-50 text-slate-300 border-dashed' : isPresent ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800';
               return (
                 <div
@@ -162,7 +164,12 @@ export default function Attendance() {
                   } ${isToday ? 'ring-2 ring-slate-900' : ''}`}
                 >
                   <span>{cell.getDate()}</span>
-                  {!isFuture && <span className="font-normal">{isPresent ? (km ? `${km} km` : 'Present') : 'Absent'}</span>}
+                  {!isFuture && (
+                    <span className="font-normal leading-tight">
+                      {count ? `${count} activity` : 'Absent'}
+                      {km ? <><br />{km} km</> : null}
+                    </span>
+                  )}
                 </div>
               );
             })}

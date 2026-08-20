@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, X } from 'lucide-react';
 import { listUsers, createUser, setUserActive } from '../../lib/api/users';
+import { listAuthorityLevels } from '../../lib/api/orgHierarchy';
 
 // Role is a permission tier, not a job title — ADMIN covers DC/CO MCL/GM
 // LWMC/WASA, AREA_MANAGER covers AC/GM/TM/Manager. The actual title goes in
@@ -8,12 +10,14 @@ import { listUsers, createUser, setUserActive } from '../../lib/api/users';
 const ROLES = ['ADMIN', 'AREA_MANAGER', 'ZO', 'SUPERVISOR', 'SURVEYOR', 'RECTIFIER'];
 
 export default function Users() {
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ username: '', fullName: '', phone: '', role: 'SURVEYOR', designation: '', password: '' });
+  const [form, setForm] = useState({ username: '', fullName: '', phone: '', role: 'SURVEYOR', designation: '', password: '', authorityId: '' });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [authorityLevels, setAuthorityLevels] = useState([]);
 
   async function refresh() {
     setLoading(true);
@@ -23,6 +27,17 @@ export default function Users() {
       setLoading(false);
     }
   }
+
+  // Authority levels only apply to AREA_MANAGER/ZO-tier hires — see
+  // 0008_authority_levels.sql. Re-fetched per selected role so the picker
+  // only ever shows options that actually apply to that role tier.
+  useEffect(() => {
+    if (form.role !== 'AREA_MANAGER' && form.role !== 'ZO') {
+      setAuthorityLevels([]);
+      return;
+    }
+    listAuthorityLevels({ roleTier: form.role, activeOnly: true }).then(setAuthorityLevels);
+  }, [form.role]);
 
   useEffect(() => {
     refresh();
@@ -34,7 +49,7 @@ export default function Users() {
     try {
       await createUser(form);
       setCreating(false);
-      setForm({ username: '', fullName: '', phone: '', role: 'SURVEYOR', designation: '', password: '' });
+      setForm({ username: '', fullName: '', phone: '', role: 'SURVEYOR', designation: '', password: '', authorityId: '' });
       await refresh();
     } catch (e) {
       setError(e.message || 'Failed to create user');
@@ -74,7 +89,7 @@ export default function Users() {
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id} className="border-b border-slate-50">
+                <tr key={u.id} onClick={() => navigate(`/admin/users/${u.id}`)} className="border-b border-slate-50 cursor-pointer hover:bg-slate-50">
                   <td className="py-2 px-3 text-slate-700">{u.full_name}</td>
                   <td className="py-2 px-3 font-mono">{u.username}</td>
                   <td className="py-2 px-3">{u.role}</td>
@@ -82,7 +97,10 @@ export default function Users() {
                   <td className="py-2 px-3">{u.phone || '—'}</td>
                   <td className="py-2 px-3">
                     <button
-                      onClick={() => handleToggle(u)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggle(u);
+                      }}
                       className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                         u.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
                       }`}
@@ -130,9 +148,26 @@ export default function Users() {
                 value={form.designation}
                 onChange={(v) => setForm((s) => ({ ...s, designation: v }))}
               />
+              {authorityLevels.length > 0 && (
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Authority level (controls who they can create)</label>
+                  <select
+                    value={form.authorityId}
+                    onChange={(e) => setForm((s) => ({ ...s, authorityId: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">None (uses default set)</option>
+                    {authorityLevels.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} — can create: {(a.creatable_roles || []).join(', ') || 'nothing'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <Field label="Temporary password" value={form.password} onChange={(v) => setForm((s) => ({ ...s, password: v }))} type="password" />
               <p className="text-[11px] text-slate-400">
-                After creating the user, assign them to a UC/Zone/Tehsil under the Assignments tab.
+                After creating the user, open their profile from this list to assign a UC/Zone/Tehsil.
               </p>
               <button
                 disabled={saving}
