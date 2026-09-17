@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Filter } from 'lucide-react';
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, GeoJSON, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { listReports } from '../lib/api/reports';
 import { listTehsils, listZones, listUcs } from '../lib/api/orgHierarchy';
@@ -22,6 +22,10 @@ function statusColor(status) {
 }
 
 const DEFAULT_CENTER = [31.48, 74.28];
+
+// Amber dashed outline for administrative boundaries — visually distinct
+// from the red/green report markers so the two never get confused.
+const BOUNDARY_STYLE = { color: '#f59e0b', weight: 2, dashArray: '6 4', fillColor: '#f59e0b', fillOpacity: 0.03 };
 
 export default function MapView() {
   const navigate = useNavigate();
@@ -83,6 +87,15 @@ export default function MapView() {
   const openCount = points.filter((r) => r.status !== 'CLOSED').length;
   const resolvedCount = points.length - openCount;
   const missingLocationCount = reports.length - points.length;
+
+  // Drill down one level at a time, reusing the arrays already fetched for
+  // the filter dropdowns above (they're already scoped by the active
+  // tehsil/zone filter): a UC selected shows just that UC's outline, a
+  // zone selected shows its UCs, a tehsil selected shows its zones, and
+  // with nothing selected it shows every tehsil.
+  const boundaryAreas = ucId ? ucs.filter((u) => u.id === ucId) : zoneId ? ucs : tehsilId ? zones : tehsils;
+  const boundaryShapes = boundaryAreas.filter((a) => a.boundary);
+  const missingBoundaryCount = boundaryAreas.length - boundaryShapes.length;
 
   return (
     <div className="space-y-4">
@@ -159,6 +172,11 @@ export default function MapView() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          {boundaryShapes.map((a) => (
+            <GeoJSON key={a.id} data={a.boundary} style={BOUNDARY_STYLE}>
+              <Tooltip sticky>{a.name}</Tooltip>
+            </GeoJSON>
+          ))}
           {points.map((r) => (
             <CircleMarker
               key={r.id}
@@ -197,6 +215,11 @@ export default function MapView() {
 
       {missingLocationCount > 0 && (
         <p className="text-[11px] text-slate-400">{missingLocationCount} matching report(s) have no GPS coordinates and aren't shown on the map.</p>
+      )}
+      {missingBoundaryCount > 0 && (
+        <p className="text-[11px] text-slate-400">
+          {missingBoundaryCount} of {boundaryAreas.length} area(s) shown don't have a boundary mapped yet — add one from the Admin panel.
+        </p>
       )}
     </div>
   );

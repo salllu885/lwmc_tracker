@@ -29,7 +29,8 @@ export default function EntityTable({ title, columns, fields, list, onCreate, on
   function openCreate() {
     const initial = {};
     fields.forEach((f) => {
-      initial[f.key] = f.default ?? (f.type === 'multiselect' ? [] : '');
+      const def = f.default ?? (f.type === 'multiselect' ? [] : '');
+      initial[f.key] = f.serialize ? f.serialize(def) : def;
     });
     setForm(initial);
     setError('');
@@ -37,7 +38,11 @@ export default function EntityTable({ title, columns, fields, list, onCreate, on
   }
 
   function openEdit(row) {
-    setForm({ ...row });
+    const initial = { ...row };
+    fields.forEach((f) => {
+      if (f.serialize) initial[f.key] = f.serialize(row[f.key]);
+    });
+    setForm(initial);
     setError('');
     setEditing(row);
   }
@@ -46,10 +51,19 @@ export default function EntityTable({ title, columns, fields, list, onCreate, on
     setSaving(true);
     setError('');
     try {
+      const payload = { ...form };
+      for (const f of fields) {
+        if (!f.parse) continue;
+        try {
+          payload[f.key] = f.parse(form[f.key]);
+        } catch (e) {
+          throw new Error(`${f.label}: ${e.message}`);
+        }
+      }
       if (editing && editing.id) {
-        await onUpdate(editing.id, form);
+        await onUpdate(editing.id, payload);
       } else {
-        await onCreate(form);
+        await onCreate(payload);
       }
       setEditing(null);
       await refresh();
@@ -173,6 +187,14 @@ export default function EntityTable({ title, columns, fields, list, onCreate, on
                         );
                       })}
                     </div>
+                  ) : f.type === 'textarea' ? (
+                    <textarea
+                      value={form[f.key] ?? ''}
+                      onChange={(e) => setForm((s) => ({ ...s, [f.key]: e.target.value }))}
+                      rows={f.rows || 5}
+                      spellCheck={false}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs font-mono"
+                    />
                   ) : (
                     <input
                       value={form[f.key] ?? ''}
@@ -180,6 +202,8 @@ export default function EntityTable({ title, columns, fields, list, onCreate, on
                       className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                     />
                   )}
+                  {f.hint && <p className="mt-1 text-[11px] text-slate-400">{f.hint}</p>}
+                  {f.actions && f.actions(form, setForm)}
                 </div>
               ))}
               <button

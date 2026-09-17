@@ -1150,6 +1150,14 @@ drop trigger if exists resolutions_validate_proximity_trigger on public.resoluti
 create trigger resolutions_validate_proximity_trigger
 before insert on public.resolutions
 for each row execute function public.resolutions_validate_proximity();
+
+-- 0010_org_boundaries: optional boundary polygon per Tehsil/Zone/UC — see
+-- that migration file for the full rationale.
+
+alter table public.tehsils add column if not exists boundary jsonb;
+alter table public.zones add column if not exists boundary jsonb;
+alter table public.ucs add column if not exists boundary jsonb;
+
 -- Dummy organisational data (requirements doc §49) so the app can be
 -- exercised end-to-end before real Tehsil/Zone/UC data is entered.
 -- Safe to re-run: fixed ids + ON CONFLICT DO NOTHING.

@@ -105,6 +105,13 @@ For wider distribution, sign the APK with a release key via Android Studio's
   that's a plain URL, not the billed Maps JS API. Swapping the embedded map
   to Google Maps is a contained follow-up if you set up Google Cloud
   billing later.
+- **Map boundaries**: Tehsils/Zones/UCs can each have an optional GeoJSON
+  boundary (Admin → Tehsils/Zones/UCs → edit → "Boundary"), drawn as an
+  outline on the Map view. Since these are Admin-entered rows, not a fixed
+  government list, there's no automatic match to an official shapefile —
+  paste GeoJSON directly, or use the built-in "look up on OpenStreetMap"
+  button as a best-effort starting point (coverage for individual Union
+  Councils is patchy; review before saving).
 - **Push notifications**: not implemented — `notifications` rows are
   written server-side so an in-app bell/list works, but nothing pings a
   phone yet.
