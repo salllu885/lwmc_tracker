@@ -42,7 +42,17 @@ export default function Tehsils() {
           serialize: serializeBoundary,
           actions: (form, setForm) => (
             <BoundaryLookupField
-              defaultQuery={form.name ? `${form.name}, Punjab, Pakistan` : ''}
+              // Include the area type and district so a name that's been
+              // reused across admin tiers or districts (e.g. Nishtar was a
+              // Lahore Town before the 2019 reorg folded it into today's
+              // Tehsil Nishtar — a different boundary, and Nishtar-anything
+              // elsewhere in Punjab is a third) resolves to the right one
+              // instead of whichever "Nishtar" OSM happens to rank first.
+              defaultQuery={
+                form.name
+                  ? `${areaTypeLabel(form.area_type)} ${form.name}, ${districtName(form.district_id) || 'Punjab'}, Pakistan`
+                  : ''
+              }
               onFound={(text) => setForm((s) => ({ ...s, boundary: text }))}
             />
           ),
