@@ -41,33 +41,51 @@ spelling differences only, e.g. "Jhulky" / "Jhalke", "Sedhar" / "Sidhar",
 "Khund" / "Khand" — Punjabi place names are romanized inconsistently between
 sources).
 
-**2 are unconfirmed possible matches** — flagged, not merged in:
-- Patwari "**Keet**" vs. PULSE's "**Kaiyat**" (tagged Nishter)
-- Patwari "**Thay Champ**" vs. PULSE's "**Tha Janib**" (tagged Nishter)
+**2 were unconfirmed possible matches, now resolved** using a hand-drawn
+Patwari sketch map the user supplied ("Map of Tehsil Nishtar District
+Lahore", colour-coded by revenue circle):
+- Patwari "**Keet**" = PULSE's "**Kaiyat**" (tagged Nishter)
+- Patwari "**Thay Champ**" = PULSE's "**Tha Janib**" (tagged Nishter)
 
-These may be the same place under very different transliteration, or two
-different places — PULSE has no other name close to "Keet" or "Thay Champ"
-anywhere in Lahore, so if they're not these two, they're simply undigitized.
-`mouzas_nishtar.geojson` currently keeps "Kaiyat" and "Tha Janib" under their
-PULSE names as-is.
+Resolved by georeferencing the sketch: read pixel positions for the 26 mouza
+labels the sketch shares with `mouzas_nishtar.geojson`, fit a least-squares
+affine transform (sketch pixel → WGS84 lon/lat) from those 26 points (RMS
+residual ~835m over a ~24km-wide tehsil), then applied it to "Keet" and "Thay
+Champ"'s sketch positions. The estimated point for "Keet" landed ~1010m from
+"Kaiyat"'s real centroid, and "Thay Champ" landed ~350m from "Tha Janib"'s —
+both within the transform's own error margin, i.e. consistent with being the
+same place. `mouzas_nishtar.geojson` keeps PULSE's spelling as the primary
+name and now records the Patwari name in each feature's `patwari_name`
+property.
 
-**1 exists in PULSE only as an unusable fragment**: Patwari "**Attu Asal**"
-matches "**Aato Asal**" in the parcel-level cadastral layer (3), but that
-record is a single ~20m x 20m parcel, not a mouza-sized boundary — almost
-certainly one digitized khasra out of many, not the whole mouza. Not added to
-the map; would misrepresent the mouza's real extent.
+**1 exists in PULSE only as an unusable fragment, now corroborated**:
+Patwari "**Attu Asal**" matches "**Aato Asal**" in the parcel-level cadastral
+layer, but that record is a single ~20m x 20m parcel, not a mouza-sized
+boundary. The same sketch-georeferencing check placed "Attu Asal" only ~480m
+from that tiny parcel's location — so it's very likely a genuine but
+barely-started digitization of the right mouza, not an unrelated sliver.
+Still not added to the map as a boundary — a 20m parcel would misrepresent
+the mouza's real extent — but this is corroborating evidence, not a
+contradiction.
 
 **10 have no PULSE record at all**, checked via every method above:
 Kamahan, Dulu Kalan, Bhallar, Mehdipura, Gajjumatta, Kahna Nou, Kahna Kohna,
-Toor Waraich, Gulvera, Halloki.
+Toor Waraich, Gulvera, Halloki. The same sketch and transform gives an
+**approximate centroid** for each — saved as `mouzas_nishtar_estimated.geojson`
+(Point geometries, `status: "estimated"`). These are not boundaries and not
+survey positions: they say "roughly here" (±1km-ish, judging by the
+transform's residuals on the mouzas it could check itself), useful for
+placing a marker or picking a rough neighbourhood, not for anything that
+needs a real edge.
 
 ## Bottom line
 
 `mouzas_nishtar.geojson`'s 31 mouzas are everything PULSE has digitized for
-Tehsil Nishtar — confirmed exhaustively, not a shallow single-layer read. The
-Patwari list is the more complete and more authoritative record; PULSE is
-simply missing boundary data for roughly a quarter of Nishtar's mouzas, most
-of them concentrated in the Kamahan and Kahna revenue circles (the tehsil's
-southern edge). Filling that gap would require a source PULSE doesn't have —
-a fresh field survey/digitization, or another agency's cadastral data — not a
-better query against PULSE.
+Tehsil Nishtar — confirmed exhaustively, not a shallow single-layer read. With
+the Patwari sketch, 32 of the 42 are now identified with real PULSE boundaries
+(31 mapped mouzas, two of them now known to carry an extra Patwari name) and
+the remaining 10 have an approximate location instead of a boundary. Filling
+that gap with a real boundary would still require a source PULSE doesn't
+have — a fresh field survey/digitization, or another agency's cadastral data
+— not a better query against PULSE. But the sketch got every one of the 42
+onto the map in some form, which a PULSE-only query never could.

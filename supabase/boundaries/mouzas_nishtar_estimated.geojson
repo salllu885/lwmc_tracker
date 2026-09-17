@@ -1,0 +1,175 @@
+{
+  "type": "FeatureCollection",
+  "metadata": {
+    "admin_level": "Mouza (estimated, unmapped in PULSE)",
+    "tehsil": "Nishtar",
+    "district": "Lahore",
+    "source": "User-provided Patwari sketch map (\"Map of Tehsil Nishtar District Lahore\"), georeferenced against mouzas_nishtar.geojson",
+    "method": "Read approximate pixel positions of 26 mouza labels shared with mouzas_nishtar.geojson off the sketch, fit a least-squares affine transform (sketch pixel -> WGS84 lon/lat) from those 26 control points, then applied it to the sketch positions of the 10 Patwari mouzas absent from every PULSE data source.",
+    "accuracy": "Approximate only. RMS residual on the 26 control points was ~835m (max ~2.2km) out of a tehsil roughly 24km across -- good enough to say which neighbourhood a mouza is in, not to draw its boundary.",
+    "retrieved": "2026-09-17",
+    "count": 10
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "mauza": "Kamahan",
+        "status": "estimated",
+        "revenue_circle": "Kamahan",
+        "note": "No PULSE boundary exists for this mouza (checked exhaustively -- see mouzas_nishtar_reconciliation.md). This point is an ESTIMATED centroid only, not a survey position: derived by georeferencing a hand-drawn Patwari sketch map against the 26 neighbouring mouzas that ARE in PULSE, via a least-squares affine fit (RMS residual ~835m, worst case ~2.2km on the known mouzas). Treat as \"roughly here\", not a boundary or an exact point."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.38368,
+          31.45017
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "mauza": "Dulu Kalan",
+        "status": "estimated",
+        "revenue_circle": "Kamahan",
+        "note": "No PULSE boundary exists for this mouza (checked exhaustively -- see mouzas_nishtar_reconciliation.md). This point is an ESTIMATED centroid only, not a survey position: derived by georeferencing a hand-drawn Patwari sketch map against the 26 neighbouring mouzas that ARE in PULSE, via a least-squares affine fit (RMS residual ~835m, worst case ~2.2km on the known mouzas). Treat as \"roughly here\", not a boundary or an exact point."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.37001,
+          31.40476
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "mauza": "Bhallar",
+        "status": "estimated",
+        "revenue_circle": "Kamahan",
+        "note": "No PULSE boundary exists for this mouza (checked exhaustively -- see mouzas_nishtar_reconciliation.md). This point is an ESTIMATED centroid only, not a survey position: derived by georeferencing a hand-drawn Patwari sketch map against the 26 neighbouring mouzas that ARE in PULSE, via a least-squares affine fit (RMS residual ~835m, worst case ~2.2km on the known mouzas). Treat as \"roughly here\", not a boundary or an exact point."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.39521,
+          31.41125
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "mauza": "Mehdipura",
+        "status": "estimated",
+        "revenue_circle": "Kahna",
+        "note": "No PULSE boundary exists for this mouza (checked exhaustively -- see mouzas_nishtar_reconciliation.md). This point is an ESTIMATED centroid only, not a survey position: derived by georeferencing a hand-drawn Patwari sketch map against the 26 neighbouring mouzas that ARE in PULSE, via a least-squares affine fit (RMS residual ~835m, worst case ~2.2km on the known mouzas). Treat as \"roughly here\", not a boundary or an exact point."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.42218,
+          31.33149
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "mauza": "Gajjumatta",
+        "status": "estimated",
+        "revenue_circle": "Kahna",
+        "note": "No PULSE boundary exists for this mouza (checked exhaustively -- see mouzas_nishtar_reconciliation.md). This point is an ESTIMATED centroid only, not a survey position: derived by georeferencing a hand-drawn Patwari sketch map against the 26 neighbouring mouzas that ARE in PULSE, via a least-squares affine fit (RMS residual ~835m, worst case ~2.2km on the known mouzas). Treat as \"roughly here\", not a boundary or an exact point."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.35004,
+          31.4021
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "mauza": "Kahna Nou",
+        "status": "estimated",
+        "revenue_circle": "Kahna",
+        "note": "No PULSE boundary exists for this mouza (checked exhaustively -- see mouzas_nishtar_reconciliation.md). This point is an ESTIMATED centroid only, not a survey position: derived by georeferencing a hand-drawn Patwari sketch map against the 26 neighbouring mouzas that ARE in PULSE, via a least-squares affine fit (RMS residual ~835m, worst case ~2.2km on the known mouzas). Treat as \"roughly here\", not a boundary or an exact point."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.38089,
+          31.36832
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "mauza": "Kahna Kohna",
+        "status": "estimated",
+        "revenue_circle": "Kahna",
+        "note": "No PULSE boundary exists for this mouza (checked exhaustively -- see mouzas_nishtar_reconciliation.md). This point is an ESTIMATED centroid only, not a survey position: derived by georeferencing a hand-drawn Patwari sketch map against the 26 neighbouring mouzas that ARE in PULSE, via a least-squares affine fit (RMS residual ~835m, worst case ~2.2km on the known mouzas). Treat as \"roughly here\", not a boundary or an exact point."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.35902,
+          31.35364
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "mauza": "Toor Waraich",
+        "status": "estimated",
+        "revenue_circle": "Pandoki",
+        "note": "No PULSE boundary exists for this mouza (checked exhaustively -- see mouzas_nishtar_reconciliation.md). This point is an ESTIMATED centroid only, not a survey position: derived by georeferencing a hand-drawn Patwari sketch map against the 26 neighbouring mouzas that ARE in PULSE, via a least-squares affine fit (RMS residual ~835m, worst case ~2.2km on the known mouzas). Treat as \"roughly here\", not a boundary or an exact point."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.30877,
+          31.36896
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "mauza": "Gulvera",
+        "status": "estimated",
+        "revenue_circle": "Pandoki",
+        "note": "No PULSE boundary exists for this mouza (checked exhaustively -- see mouzas_nishtar_reconciliation.md). This point is an ESTIMATED centroid only, not a survey position: derived by georeferencing a hand-drawn Patwari sketch map against the 26 neighbouring mouzas that ARE in PULSE, via a least-squares affine fit (RMS residual ~835m, worst case ~2.2km on the known mouzas). Treat as \"roughly here\", not a boundary or an exact point."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.38497,
+          31.27737
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "mauza": "Halloki",
+        "status": "estimated",
+        "revenue_circle": "Pandoki",
+        "note": "No PULSE boundary exists for this mouza (checked exhaustively -- see mouzas_nishtar_reconciliation.md). This point is an ESTIMATED centroid only, not a survey position: derived by georeferencing a hand-drawn Patwari sketch map against the 26 neighbouring mouzas that ARE in PULSE, via a least-squares affine fit (RMS residual ~835m, worst case ~2.2km on the known mouzas). Treat as \"roughly here\", not a boundary or an exact point."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.28764,
+          31.37231
+        ]
+      }
+    }
+  ]
+}

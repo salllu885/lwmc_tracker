@@ -7,6 +7,7 @@
     "source": "Punjab PULSE Land Information System (lis.pulse.gop.pk) -> ArcGIS Server gismaps.punjab-zameen.gov.pk, service Punjab/Admin__Boundaries/MapServer, layer 3 (\"Mouzas (Tentative)\")",
     "selection": "All features with TEHSIL='Nishter' AND DISTRICT='Lahore'. Cross-checked with a spatial intersects query against the Tehsil Nishtar polygon (tehsil_nishtar.geojson): all 31 mouza centroids fall inside it; 24 other mouzas from neighbouring tehsils (Raiwind, Model Town, Lahore Sadar, Allama Iqbal, Lahore Cantt) merely clip the shared boundary edge and were excluded.",
     "caveat": "The source layer is explicitly named \"Mouzas (Tentative)\" by Punjab's GIS service -- treat mouza-to-tehsil assignment as provisional, not a final legal record.",
+    "patwari_cross_check": "Checked against an official 42-mouza Patwari (revenue) list for Tehsil Nishtar; see mouzas_nishtar_reconciliation.md. \"Kaiyat\" and \"Tha Janib\" here are now confirmed as the Patwari list's \"Keet\" and \"Thay Champ\" (see each feature's patwari_name), by georeferencing a hand-drawn Patwari sketch map against the other 26 mouzas already confirmed here and checking the estimated positions land within the georeferencing error. The other 10 Patwari mouzas have no PULSE boundary at all -- see mouzas_nishtar_estimated.geojson for approximate point locations derived the same way.",
     "retrieved": "2026-09-17",
     "count": 31
   },
@@ -18089,6 +18090,8 @@
       "type": "Feature",
       "properties": {
         "mauza": "Kaiyat",
+        "patwari_name": "Keet",
+        "patwari_match_confidence": "estimated location from the Patwari sketch map places \"Keet\" ~1010m from this mouza's centroid, within the sketch's overall georeferencing error -- treated as a confirmed match",
         "mauza_urdu": null,
         "hb_no": null,
         "tehsil": "Nishter",
@@ -37275,6 +37278,8 @@
       "type": "Feature",
       "properties": {
         "mauza": "Tha Janib",
+        "patwari_name": "Thay Champ",
+        "patwari_match_confidence": "estimated location from the Patwari sketch map places \"Thay Champ\" ~350m from this mouza's centroid, within the sketch's overall georeferencing error -- treated as a confirmed match",
         "mauza_urdu": null,
         "hb_no": null,
         "tehsil": "Nishter",
