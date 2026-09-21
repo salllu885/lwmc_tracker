@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Field Boundary Marker</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --border: #dbe0e6;
+    --text: #12181f;
+    --text-muted: #5b6572;
+    --accent: #f59e0b;
+    --accent-strong: #92400e;
+    --accent-soft: #fef3c7;
+    --accent-line: #d97706;
+    --ok: #15803d;
+    --ok-soft: #dcfce7;
+    --danger: #dc2626;
+    --danger-soft: #fee2e2;
+    --shadow: 0 1px 2px rgba(16,24,32,.06), 0 6px 18px -10px rgba(16,24,32,.25);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0f14; --surface: #141a22; --surface-2: #1b232d; --border: #29333f;
+      --text: #eef1f5; --text-muted: #93a0ae; --accent: #f7a83a; --accent-strong: #fcd34d;
+      --accent-soft: rgba(247,168,58,.16); --accent-line: #f0a83f;
+      --ok: #4ade80; --ok-soft: rgba(74,222,128,.14);
+      --danger: #f87171; --danger-soft: rgba(248,113,113,.14);
+      --shadow: 0 1px 2px rgba(0,0,0,.5), 0 6px 18px -10px rgba(0,0,0,.6);
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, Roboto, "Segoe UI", sans-serif;
+    padding: env(safe-area-inset-top,10px) 12px calc(env(safe-area-inset-bottom,10px) + 12px);
+    display: flex; flex-direction: column; gap: 10px;
+    -webkit-user-select: none; user-select: none;
+  }
+  h1 { font-size: 17px; margin: 0; }
+  h2 { font-size: 13px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 2px; }
+  .gps-chip {
+    display: flex; align-items: center; gap: 6px; font-family: monospace; font-size: 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 100px;
+    padding: 6px 10px; box-shadow: var(--shadow); white-space: nowrap;
+  }
+  .gps-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); flex: none; }
+  .gps-dot.good { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+  .gps-dot.fair { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .gps-dot.bad { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 12px; box-shadow: var(--shadow);
+  }
+
+  #mapWrap { position: relative; padding: 0; overflow: hidden; }
+  #mapSvg { display: block; width: 100%; height: 46vh; min-height: 220px; background: var(--surface-2); }
+  .map-empty {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; pointer-events: none;
+  }
+
+  .field-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  input[type="text"] {
+    flex: 1; font: inherit; font-size: 15px; padding: 11px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text); min-width: 0;
+  }
+  input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .btn {
+    appearance: none; border: 1px solid transparent; border-radius: 12px; font: inherit;
+    font-size: 15px; font-weight: 700; padding: 13px 16px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: 1;
+    min-height: 48px;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .45; }
+  .btn-primary { background: var(--accent); color: #201404; }
+  .btn-secondary { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+  .btn-danger { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
+  .btn-ok { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }
+  .btn-row { display: flex; gap: 8px; }
+  .btn-small { flex: none; padding: 8px 12px; font-size: 13px; min-height: 36px; border-radius: 9px; }
+
+  .hint { font-size: 12px; color: var(--text-muted); margin: 6px 0 0; line-height: 1.4; }
+  .pointcount { font-family: monospace; font-size: 13px; color: var(--text-muted); }
+
+  .item {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 10px 4px; border-bottom: 1px solid var(--border);
+  }
+  .item:last-child { border-bottom: none; }
+  .item-main { min-width: 0; }
+  .item-name { font-weight: 700; font-size: 14px; }
+  .item-meta { font-size: 12px; color: var(--text-muted); font-family: monospace; }
+  .badge {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+    padding: 2px 7px; border-radius: 100px; background: var(--accent-soft); color: var(--accent-strong);
+    flex: none;
+  }
+  .empty-note { font-size: 13px; color: var(--text-muted); padding: 6px 4px; }
+
+  #toast {
+    position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom,10px) + 12px);
+    background: var(--text); color: var(--bg); padding: 12px 16px; border-radius: 12px;
+    font-size: 13px; text-align: center; box-shadow: var(--shadow); transform: translateY(120%);
+    transition: transform .25s ease; z-index: 50;
+  }
+  #toast.show { transform: translateY(0); }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <h1>Field Boundary Marker</h1>
+    <div class="gps-chip"><span class="gps-dot" id="gpsDot"></span><span id="gpsText">no fix</span></div>
+  </div>
+
+  <div class="card" id="mapWrap">
+    <svg id="mapSvg" viewBox="0 0 1000 1000"></svg>
+    <div class="map-empty" id="mapEmpty">Tap "Add point" while tracing a boundary to see your trail here.</div>
+  </div>
+
+  <div class="card">
+    <h2>Trace a boundary</h2>
+    <div class="field-row">
+      <input type="text" id="boundaryName" placeholder="Name (e.g. UC-247, Mouza Kacha)">
+    </div>
+    <div class="btn-row" style="margin-bottom:8px;">
+      <button class="btn btn-primary" id="btnAddPoint">+ Add point</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary btn-small" id="btnUndo">Undo last</button>
+      <button class="btn btn-ok btn-small" id="btnFinish">Finish &amp; save</button>
+      <button class="btn btn-danger btn-small" id="btnDiscard">Discard</button>
+    </div>
+    <p class="hint"><span class="pointcount" id="draftCount">0 points</span> in the current boundary. Walk the edge and tap "Add point" at each corner; "Finish &amp; save" closes the shape back to your first point.</p>
+  </div>
+
+  <div class="card">
+    <h2>Mark a single point</h2>
+    <div class="field-row">
+      <input type="text" id="pointName" placeholder="Name (e.g. Mouza marker, landmark)">
+      <button class="btn btn-primary btn-small" id="btnMarkPoint" style="flex:none;">Mark here</button>
+    </div>
+    <p class="hint">Captures your current GPS fix as one standalone point &mdash; for landmarks or reference points, not a boundary.</p>
+  </div>
+
+  <div class="card">
+    <h2>Saved on this device</h2>
+    <div id="savedList"></div>
+  </div>
+
+  <div class="card">
+    <button class="btn btn-primary" id="btnExport" style="width:100%;">Export &amp; share all</button>
+    <p class="hint">Bundles every saved boundary and point below into one GeoJSON file and opens your phone's share sheet &mdash; send it wherever you'd send a photo.</p>
+  </div>
+
+  <div id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var STORAGE_KEY = "fbm_saved_v1";
+  var DRAFT_KEY = "fbm_draft_v1";
+
+  var state = load(STORAGE_KEY, { boundaries: [], points: [] });
+  var draft = load(DRAFT_KEY, { points: [] });
+  var lastFix = null;
+
+  function load(key, fallback) {
+    try {
+      var raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (e) { return fallback; }
+  }
+  function saveState() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+  }
+  function saveDraft() {
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
+  }
+
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function fmt(n, d) { return (typeof n === "number") ? n.toFixed(d) : "--"; }
+
+  function toast(msg) {
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { el.classList.remove("show"); }, 2600);
+  }
+
+  // ---- GPS ----
+  var gpsDot = document.getElementById("gpsDot");
+  var gpsText = document.getElementById("gpsText");
+
+  function onPosition(pos) {
+    lastFix = {
+      lat: pos.coords.latitude,
+      lon: pos.coords.longitude,
+      acc: pos.coords.accuracy,
+      t: Date.now()
+    };
+    var acc = pos.coords.accuracy;
+    var cls = acc <= 15 ? "good" : acc <= 40 ? "fair" : "bad";
+    gpsDot.className = "gps-dot " + cls;
+    gpsText.textContent = lastFix.lat.toFixed(5) + ", " + lastFix.lon.toFixed(5) + "  ±" + Math.round(acc) + "m";
+    render();
+  }
+  function onPositionError(err) {
+    gpsDot.className = "gps-dot bad";
+    gpsText.textContent = "GPS error: " + (err.message || err.code);
+  }
+  if (navigator.geolocation) {
+    navigator.geolocation.watchPosition(onPosition, onPositionError, {
+      enableHighAccuracy: true, maximumAge: 1000, timeout: 20000
+    });
+  } else {
+    gpsText.textContent = "no geolocation support";
+  }
+
+  // ---- live SVG preview of the current draft boundary ----
+  var svg = document.getElementById("mapSvg");
+  var mapEmpty = document.getElementById("mapEmpty");
+  var VB = 1000, MARGIN = 60;
+
+  function svgEl(tag, attrs) {
+    var el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  function render() {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    var pts = draft.points.slice();
+    var live = lastFix ? [lastFix.lon, lastFix.lat] : null;
+
+    var allForBounds = pts.map(function (p) { return [p.lon, p.lat]; });
+    if (live) allForBounds.push(live);
+
+    if (allForBounds.length === 0) {
+      mapEmpty.style.display = "flex";
+      return;
+    }
+    mapEmpty.style.display = "none";
+
+    var lons = allForBounds.map(function (p) { return p[0]; });
+    var lats = allForBounds.map(function (p) { return p[1]; });
+    var lonMin = Math.min.apply(null, lons), lonMax = Math.max.apply(null, lons);
+    var latMin = Math.min.apply(null, lats), latMax = Math.max.apply(null, lats);
+    if (lonMax - lonMin < 0.0003) { lonMin -= 0.0003; lonMax += 0.0003; }
+    if (latMax - latMin < 0.0003) { latMin -= 0.0003; latMax += 0.0003; }
+
+    var meanLatRad = (latMin + latMax) / 2 * Math.PI / 180;
+    var cosLat = Math.cos(meanLatRad);
+    var lonSpan = (lonMax - lonMin) * cosLat;
+    var latSpan = latMax - latMin;
+    var drawable = VB - MARGIN * 2;
+    var scale = Math.min(drawable / lonSpan, drawable / latSpan);
+    var usedW = lonSpan * scale, usedH = latSpan * scale;
+    var offX = MARGIN + (drawable - usedW) / 2;
+    var offY = MARGIN + (drawable - usedH) / 2;
+
+    function toXY(lon, lat) {
+      return [offX + (lon - lonMin) * cosLat * scale, offY + (latMax - lat) * scale];
+    }
+
+    svg.appendChild(svgEl("rect", { x: 0, y: 0, width: VB, height: VB, fill: "var(--surface-2)" }));
+
+    if (pts.length > 0) {
+      var d = pts.map(function (p, i) {
+        var xy = toXY(p.lon, p.lat);
+        return (i === 0 ? "M" : "L") + xy[0].toFixed(1) + "," + xy[1].toFixed(1);
+      }).join(" ");
+      svg.appendChild(svgEl("path", {
+        d: d, fill: "none", stroke: "var(--accent-line)", "stroke-width": 4,
+        "stroke-linecap": "round", "stroke-linejoin": "round"
+      }));
+      pts.forEach(function (p, i) {
+        var xy = toXY(p.lon, p.lat);
+        svg.appendChild(svgEl("circle", { cx: xy[0], cy: xy[1], r: 9, fill: "var(--accent)", stroke: "var(--surface)", "stroke-width": 2 }));
+        var label = svgEl("text", { x: xy[0], y: xy[1] - 14, "text-anchor": "middle", "font-size": 20, "font-family": "monospace", fill: "var(--accent-strong)", "font-weight": "700" });
+        label.textContent = String(i + 1);
+        svg.appendChild(label);
+      });
+      if (pts.length > 2) {
+        var first = toXY(pts[0].lon, pts[0].lat);
+        var last = toXY(pts[pts.length - 1].lon, pts[pts.length - 1].lat);
+        svg.appendChild(svgEl("line", {
+          x1: last[0], y1: last[1], x2: first[0], y2: first[1],
+          stroke: "var(--accent-line)", "stroke-width": 2, "stroke-dasharray": "6 6", opacity: 0.6
+        }));
+      }
+    }
+
+    if (live) {
+      var lxy = toXY(live[0], live[1]);
+      svg.appendChild(svgEl("circle", { cx: lxy[0], cy: lxy[1], r: 22, fill: "var(--ok)", "fill-opacity": 0.25 }));
+      svg.appendChild(svgEl("circle", { cx: lxy[0], cy: lxy[1], r: 9, fill: "var(--ok)", stroke: "var(--surface)", "stroke-width": 2.5 }));
+    }
+  }
+
+  // ---- draft boundary controls ----
+  var boundaryNameInput = document.getElementById("boundaryName");
+  var draftCountEl = document.getElementById("draftCount");
+
+  function refreshDraftUI() {
+    draftCountEl.textContent = draft.points.length + " point" + (draft.points.length === 1 ? "" : "s");
+    document.getElementById("btnUndo").disabled = draft.points.length === 0;
+    document.getElementById("btnFinish").disabled = draft.points.length < 3;
+    document.getElementById("btnDiscard").disabled = draft.points.length === 0;
+    render();
+  }
+
+  document.getElementById("btnAddPoint").addEventListener("click", function () {
+    if (!lastFix) { toast("Waiting for a GPS fix…"); return; }
+    draft.points.push({ lat: lastFix.lat, lon: lastFix.lon, acc: lastFix.acc, t: lastFix.t });
+    saveDraft();
+    refreshDraftUI();
+    toast("Point " + draft.points.length + " added (±" + Math.round(lastFix.acc) + "m)");
+  });
+
+  document.getElementById("btnUndo").addEventListener("click", function () {
+    draft.points.pop();
+    saveDraft();
+    refreshDraftUI();
+  });
+
+  document.getElementById("btnDiscard").addEventListener("click", function () {
+    if (draft.points.length && !confirm("Discard the " + draft.points.length + "-point boundary in progress?")) return;
+    draft = { points: [] };
+    saveDraft();
+    refreshDraftUI();
+  });
+
+  document.getElementById("btnFinish").addEventListener("click", function () {
+    if (draft.points.length < 3) { toast("Need at least 3 points to close a boundary"); return; }
+    var name = boundaryNameInput.value.trim() || ("Boundary " + new Date().toLocaleString());
+    state.boundaries.push({
+      id: uid(), name: name, points: draft.points.slice(), createdAt: Date.now()
+    });
+    saveState();
+    draft = { points: [] };
+    saveDraft();
+    boundaryNameInput.value = "";
+    refreshDraftUI();
+    refreshSavedList();
+    toast("Saved “" + name + "”");
+  });
+
+  // ---- standalone point marking ----
+  document.getElementById("btnMarkPoint").addEventListener("click", function () {
+    if (!lastFix) { toast("Waiting for a GPS fix…"); return; }
+    var nameEl = document.getElementById("pointName");
+    var name = nameEl.value.trim() || ("Point " + new Date().toLocaleString());
+    state.points.push({
+      id: uid(), name: name, lat: lastFix.lat, lon: lastFix.lon, acc: lastFix.acc, t: lastFix.t
+    });
+    saveState();
+    nameEl.value = "";
+    refreshSavedList();
+    toast("Marked “" + name + "”");
+  });
+
+  // ---- saved list ----
+  var savedList = document.getElementById("savedList");
+
+  function refreshSavedList() {
+    savedList.innerHTML = "";
+    var all = state.boundaries.map(function (b) { return { type: "boundary", data: b }; })
+      .concat(state.points.map(function (p) { return { type: "point", data: p }; }))
+      .sort(function (a, b) { return (b.data.createdAt || b.data.t) - (a.data.createdAt || a.data.t); });
+
+    if (all.length === 0) {
+      savedList.innerHTML = '<p class="empty-note">Nothing saved yet.</p>';
+      return;
+    }
+
+    all.forEach(function (entry) {
+      var row = document.createElement("div");
+      row.className = "item";
+      var main = document.createElement("div");
+      main.className = "item-main";
+      var nameEl = document.createElement("div");
+      nameEl.className = "item-name";
+      nameEl.textContent = entry.data.name;
+      var metaEl = document.createElement("div");
+      metaEl.className = "item-meta";
+      if (entry.type === "boundary") {
+        metaEl.textContent = entry.data.points.length + " pts · " + new Date(entry.data.createdAt).toLocaleDateString();
+      } else {
+        metaEl.textContent = entry.data.lat.toFixed(5) + ", " + entry.data.lon.toFixed(5) + " · ±" + Math.round(entry.data.acc) + "m";
+      }
+      main.appendChild(nameEl);
+      main.appendChild(metaEl);
+
+      var right = document.createElement("div");
+      right.style.display = "flex";
+      right.style.alignItems = "center";
+      right.style.gap = "8px";
+      var badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = entry.type === "boundary" ? "Boundary" : "Point";
+      var delBtn = document.createElement("button");
+      delBtn.className = "btn btn-danger btn-small";
+      delBtn.textContent = "×";
+      delBtn.style.flex = "none";
+      delBtn.style.minHeight = "32px";
+      delBtn.style.padding = "6px 12px";
+      delBtn.addEventListener("click", function () {
+        if (!confirm('Delete "' + entry.data.name + '"?')) return;
+        if (entry.type === "boundary") {
+          state.boundaries = state.boundaries.filter(function (b) { return b.id !== entry.data.id; });
+        } else {
+          state.points = state.points.filter(function (p) { return p.id !== entry.data.id; });
+        }
+        saveState();
+        refreshSavedList();
+      });
+      right.appendChild(badge);
+      right.appendChild(delBtn);
+
+      row.appendChild(main);
+      row.appendChild(right);
+      savedList.appendChild(row);
+    });
+  }
+
+  // ---- export ----
+  window.onShareError = function (msg) { toast("Share failed: " + msg); };
+
+  document.getElementById("btnExport").addEventListener("click", function () {
+    if (state.boundaries.length === 0 && state.points.length === 0) {
+      toast("Nothing saved to export yet");
+      return;
+    }
+    var features = [];
+    state.boundaries.forEach(function (b) {
+      var ring = b.points.map(function (p) { return [p.lon, p.lat]; });
+      if (ring.length) ring.push(ring[0]);
+      features.push({
+        type: "Feature",
+        properties: {
+          name: b.name,
+          kind: "field_boundary",
+          point_count: b.points.length,
+          created_at: new Date(b.createdAt).toISOString(),
+          avg_accuracy_m: Math.round(
+            b.points.reduce(function (s, p) { return s + (p.acc || 0); }, 0) / b.points.length
+          ),
+          vertex_accuracy_m: b.points.map(function (p) { return Math.round(p.acc || 0); })
+        },
+        geometry: { type: "Polygon", coordinates: [ring] }
+      });
+    });
+    state.points.forEach(function (p) {
+      features.push({
+        type: "Feature",
+        properties: {
+          name: p.name,
+          kind: "field_point",
+          created_at: new Date(p.t).toISOString(),
+          accuracy_m: Math.round(p.acc || 0)
+        },
+        geometry: { type: "Point", coordinates: [p.lon, p.lat] }
+      });
+    });
+
+    var fc = {
+      type: "FeatureCollection",
+      metadata: {
+        source: "Field Boundary Marker (Android)",
+        exported_at: new Date().toISOString(),
+        boundary_count: state.boundaries.length,
+        point_count: state.points.length
+      },
+      features: features
+    };
+
+    var json = JSON.stringify(fc, null, 2);
+    var filename = "field_boundaries_" + new Date().toISOString().slice(0, 10) + ".geojson";
+
+    if (window.AndroidBridge && window.AndroidBridge.shareGeoJSON) {
+      window.AndroidBridge.shareGeoJSON(filename, json);
+    } else {
+      // fallback for viewing this file in a plain browser during development
+      var blob = new Blob([json], { type: "application/geo+json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+    }
+  });
+
+  refreshDraftUI();
+  refreshSavedList();
+})();
+</script>
+</body>
+</html>
