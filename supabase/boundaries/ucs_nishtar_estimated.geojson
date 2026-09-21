@@ -1,0 +1,239 @@
+{
+  "type": "FeatureCollection",
+  "metadata": {
+    "admin_level": "Union Council",
+    "tehsil": "Nishtar",
+    "district": "Lahore",
+    "source": "User's HelloTracks account (live.hellotracks.com/zones) -- a private org tenant, not public GIS. Confirmed by the account owner: Tehsil Nishtar contains exactly these 14 UCs, no others.",
+    "method": "Each UC's zone polygon was viewed individually on HelloTracks' real Mapbox/OSM basemap via screenshots the user provided. Positions here are a single representative point per UC, anchored to a recognizable place-name label visible within that UC's own screenshot and matched against this repo's already-georeferenced mouza coordinates where a clear name match exists (see mouzas_nishtar.geojson). This is NOT a traced polygon boundary -- without a pixel-picking tool, visually estimating vertex coordinates from a screenshot produced two independent scale checks that disagreed by ~13%, too imprecise to publish as a boundary shape.",
+    "caveat": "Points only, not boundaries. 'moderate' confidence = anchored to a real matched place name; 'low'/'very low' = no name match or no pixel access at all, positioned by relative adjacency only. For real UC boundary polygons, the reliable path is exporting the zones' GeoJSON from HelloTracks itself (e.g. via its Network tab) rather than screenshot tracing.",
+    "retrieved": "2026-09-21",
+    "count": 14
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-242",
+        "confidence": "moderate",
+        "note": "anchored to 'Atari Saroba' label visible in the zone",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.36933,
+          31.4306
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-243",
+        "confidence": "low",
+        "note": "no mouza-name match; placed between UC-242 and UC-245/254 by adjacency",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.4,
+          31.415
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-244",
+        "confidence": "moderate",
+        "note": "anchored to 'Gajju Matah' label visible in the zone",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.35004,
+          31.4021
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-245",
+        "confidence": "moderate",
+        "note": "anchored to 'Ghankar' label visible in the zone",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.39338,
+          31.3904
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-246",
+        "confidence": "moderate",
+        "note": "anchored to 'Dulu Khurd'/'Dulu Kalan' labels visible in the zone",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.3716,
+          31.40484
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-247",
+        "confidence": "moderate",
+        "note": "anchored to 'Kahna Nau' label visible in the zone",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.38089,
+          31.36832
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-248",
+        "confidence": "moderate",
+        "note": "anchored to 'Kahna Purana' label (= Kahna Kohna) visible in the zone",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.35902,
+          31.35364
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-249",
+        "confidence": "low",
+        "note": "no mouza-name match (DHA Phase 4/5); placed near Kamahan-Lidher Road by relative position",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.415,
+          31.45
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-250",
+        "confidence": "moderate",
+        "note": "anchored to 'Kacha'/'Waraich' labels visible in the zone",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.317,
+          31.383
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-251",
+        "confidence": "moderate",
+        "note": "anchored to 'Kacha' label visible in the zone, Valencia/DHA Rahbar side",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.3,
+          31.41
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-252",
+        "confidence": "moderate",
+        "note": "anchored to 'Ladheke'/'Pandoke' labels visible in the zone",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.366,
+          31.288
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-253",
+        "confidence": "moderate",
+        "note": "anchored to 'Mehdi Pur'/'Saraich'/'Atto Asal' labels visible in the zone",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.42,
+          31.32
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-254",
+        "confidence": "very low",
+        "note": "no pixel access to this screenshot (pre-file-save); placed from memory of 'Nishter Colony'/DHA Phase 9 landmarks only",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.44,
+          31.4
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "uc": "UC-257",
+        "confidence": "very low",
+        "note": "no pixel access to this screenshot (pre-file-save); placed from memory of 'University of Lahore'/Central Park landmarks only",
+        "status": "estimated"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.27,
+          31.4
+        ]
+      }
+    }
+  ]
+}
