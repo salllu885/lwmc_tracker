@@ -5,7 +5,7 @@
     "tehsil": "Nishtar",
     "district": "Lahore",
     "source": "User's HelloTracks account (live.hellotracks.com/zones) -- a private org tenant, not public GIS. Confirmed by the account owner: Tehsil Nishtar contains exactly these 14 UCs, no others.",
-    "method": "Each UC's zone polygon was viewed individually on HelloTracks' real Mapbox/OSM basemap via screenshots the user provided. Positions here are a single representative point per UC, anchored to a recognizable place-name label visible within that UC's own screenshot and matched against this repo's already-georeferenced mouza coordinates where a clear name match exists (see mouzas_nishtar.geojson). This is NOT a traced polygon boundary -- without a pixel-picking tool, visually estimating vertex coordinates from a screenshot produced two independent scale checks that disagreed by ~13%, too imprecise to publish as a boundary shape.",
+    "method": "Each UC's zone polygon was viewed individually on HelloTracks' real Mapbox/OSM basemap via screenshots the user provided. Positions here are a single representative anchor point per UC, matched against this repo's already-georeferenced mouza coordinates where a clear name match exists, refined further using landmarks shared between adjacent UCs' screenshots (e.g. 'Rajabole' appears in both UC-244 and UC-254's views). These anchors are also the generator points for the Voronoi tessellation in ucs_nishtar_tentative.geojson.",
     "caveat": "Points only, not boundaries. 'moderate' confidence = anchored to a real matched place name; 'low'/'very low' = no name match or no pixel access at all, positioned by relative adjacency only. For real UC boundary polygons, the reliable path is exporting the zones' GeoJSON from HelloTracks itself (e.g. via its Network tab) rather than screenshot tracing.",
     "retrieved": "2026-09-21",
     "count": 14
@@ -32,14 +32,14 @@
       "properties": {
         "uc": "UC-243",
         "confidence": "low",
-        "note": "no mouza-name match; placed between UC-242 and UC-245/254 by adjacency",
+        "note": "no mouza-name match; refined using shared 'Nishter Colony' label with UC-242/UC-254's screenshots",
         "status": "estimated"
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
           74.4,
-          31.415
+          31.42
         ]
       }
     },
@@ -128,14 +128,14 @@
       "properties": {
         "uc": "UC-249",
         "confidence": "low",
-        "note": "no mouza-name match (DHA Phase 4/5); placed near Kamahan-Lidher Road by relative position",
+        "note": "no mouza-name match; refined using 'Kamahan-Lidher Road' label shared with the Kamahan area",
         "status": "estimated"
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
-          74.415,
-          31.45
+          74.42,
+          31.46
         ]
       }
     },
@@ -208,14 +208,14 @@
       "properties": {
         "uc": "UC-254",
         "confidence": "very low",
-        "note": "no pixel access to this screenshot (pre-file-save); placed from memory of 'Nishter Colony'/DHA Phase 9 landmarks only",
+        "note": "no pixel access to this screenshot (pre-file-save); refined using 'Rajabole' label shared with UC-244/UC-245's screenshots",
         "status": "estimated"
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
-          74.44,
-          31.4
+          74.42,
+          31.415
         ]
       }
     },
@@ -224,13 +224,13 @@
       "properties": {
         "uc": "UC-257",
         "confidence": "very low",
-        "note": "no pixel access to this screenshot (pre-file-save); placed from memory of 'University of Lahore'/Central Park landmarks only",
+        "note": "no pixel access to this screenshot (pre-file-save); refined using 'DHA Phase XI Rahbar' label shared with UC-251's screenshot",
         "status": "estimated"
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
-          74.27,
+          74.265,
           31.4
         ]
       }
