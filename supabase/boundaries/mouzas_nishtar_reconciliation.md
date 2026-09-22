@@ -1,5 +1,16 @@
 # Tehsil Nishtar mouzas: PULSE vs. the official Patwari list
 
+> **Update (2026-09-22): this gap is now closed.** All 10 previously-missing
+> mouzas, plus "Attu Asal" below, now have real traced boundary polygons in
+> `mouzas_nishtar_42.geojson`, sourced from a screen-trace of PULSE's own
+> rendered map (not the ArcGIS attribute query this document is about) and
+> validated against everything on this page — see
+> `mouzas_nishtar_42_crosscheck.md` for the full validation.
+> `mouzas_nishtar_estimated.geojson` (the point-only estimates this document
+> describes below) has been removed; the analysis on this page is kept as
+> the historical record of how the gap was first identified and exhausted
+> against PULSE specifically.
+
 The Patwari (revenue) record for Tehsil Nishtar, District Lahore lists **42 mouzas**
 across three revenue circles (Kamahan, Kahna, Pandoki). PULSE's own GIS/data only
 covers **31** of them as mapped boundaries in `mouzas_nishtar.geojson`. This file
