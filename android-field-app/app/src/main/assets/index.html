@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Field Boundary Marker</title>
+<link rel="stylesheet" href="leaflet/leaflet.css">
 <style>
   :root {
     --bg: #f6f7f9;
@@ -20,6 +21,9 @@
     --ok-soft: #dcfce7;
     --danger: #dc2626;
     --danger-soft: #fee2e2;
+    --tehsil-line: #12181f;
+    --mouza-line: #5b6572;
+    --uc-line: #7c3aed;
     --shadow: 0 1px 2px rgba(16,24,32,.06), 0 6px 18px -10px rgba(16,24,32,.25);
   }
   @media (prefers-color-scheme: dark) {
@@ -29,6 +33,7 @@
       --accent-soft: rgba(247,168,58,.16); --accent-line: #f0a83f;
       --ok: #4ade80; --ok-soft: rgba(74,222,128,.14);
       --danger: #f87171; --danger-soft: rgba(248,113,113,.14);
+      --tehsil-line: #eef1f5; --mouza-line: #93a0ae; --uc-line: #a78bfa;
       --shadow: 0 1px 2px rgba(0,0,0,.5), 0 6px 18px -10px rgba(0,0,0,.6);
     }
   }
@@ -60,11 +65,28 @@
     padding: 12px; box-shadow: var(--shadow);
   }
 
-  #mapWrap { position: relative; padding: 0; overflow: hidden; }
-  #mapSvg { display: block; width: 100%; height: 46vh; min-height: 220px; background: var(--surface-2); }
-  .map-empty {
-    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; pointer-events: none;
+  #mapWrap { position: relative; padding: 0; }
+  #map { width: 100%; height: 46vh; min-height: 240px; background: var(--surface-2); border-radius: 14px; overflow: hidden; }
+  .leaflet-control-attribution { font-size: 9px !important; }
+  .pt-label {
+    background: none !important; border: none !important; box-shadow: none !important;
+    font-weight: 700; font-size: 13px; color: #92400e; font-family: monospace;
+  }
+  .pt-label::before { display: none !important; }
+
+  .layer-toggles {
+    display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px 12px; font-size: 12px;
+    border-top: 1px solid var(--border); color: var(--text-muted);
+  }
+  .layer-toggles label { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .layer-toggles input { margin: 0; }
+  .layer-toggles .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .sw-tehsil { border: 2px solid var(--tehsil-line); background: transparent; }
+  .sw-mouza { border: 1.5px solid var(--mouza-line); background: rgba(91,101,114,.12); }
+  .sw-uc { border: 1.5px dashed var(--uc-line); background: rgba(124,58,237,.12); }
+  .locate-btn {
+    margin-left: auto; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+    border-radius: 8px; padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer;
   }
 
   .field-row { display: flex; gap: 8px; margin-bottom: 8px; }
@@ -124,8 +146,13 @@
   </div>
 
   <div class="card" id="mapWrap">
-    <svg id="mapSvg" viewBox="0 0 1000 1000"></svg>
-    <div class="map-empty" id="mapEmpty">Tap "Add point" while tracing a boundary to see your trail here.</div>
+    <div id="map"></div>
+    <div class="layer-toggles">
+      <label><input type="checkbox" id="toggleTehsil" checked><span class="swatch sw-tehsil"></span>Tehsil</label>
+      <label><input type="checkbox" id="toggleMouzas" checked><span class="swatch sw-mouza"></span>Mouzas (42)</label>
+      <label><input type="checkbox" id="toggleUcs"><span class="swatch sw-uc"></span>UC cells (tentative)</label>
+      <button class="locate-btn" id="btnLocate" type="button">Center on me</button>
+    </div>
   </div>
 
   <div class="card">
@@ -165,6 +192,10 @@
 
   <div id="toast"></div>
 
+<script src="leaflet/leaflet.js"></script>
+<script src="data/tehsil.js"></script>
+<script src="data/mouzas.js"></script>
+<script src="data/ucs.js"></script>
 <script>
 (function () {
   "use strict";
@@ -190,7 +221,6 @@
   }
 
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
-  function fmt(n, d) { return (typeof n === "number") ? n.toFixed(d) : "--"; }
 
   function toast(msg) {
     var el = document.getElementById("toast");
@@ -200,9 +230,94 @@
     toast._t = setTimeout(function () { el.classList.remove("show"); }, 2600);
   }
 
+  // ---- map setup ----
+  // Base tiles need a live connection (this app requests the INTERNET
+  // permission for exactly this); every reference boundary layer below is
+  // bundled in the app itself and renders with or without a connection.
+  var map = L.map("map", { attributionControl: true, zoomControl: true });
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors"
+  }).addTo(map);
+
+  var tehsilLayer = L.geoJSON(TEHSIL_DATA, {
+    style: { color: "#d97706", weight: 3, fill: false, opacity: 0.9 }
+  });
+  var mouzaLayer = L.geoJSON(MOUZAS_DATA, {
+    style: function (feature) {
+      var conf = feature.properties.confidence;
+      return {
+        color: "#5b6572",
+        weight: 1.2,
+        opacity: conf === "high" ? 0.75 : 0.6,
+        dashArray: conf === "high" ? null : "4 3",
+        fillColor: "#5b6572",
+        fillOpacity: 0.05
+      };
+    },
+    onEachFeature: function (feature, layer) {
+      var p = feature.properties;
+      layer.bindTooltip(p.name + (p.confidence !== "high" ? " (" + p.confidence + " confidence)" : ""), { sticky: true });
+    }
+  });
+  var ucLayer = L.geoJSON(UCS_DATA, {
+    style: function (feature) {
+      var faint = feature.properties.confidence === "low" || feature.properties.confidence === "very low";
+      return {
+        color: "#7c3aed", weight: 1.5, dashArray: "5 3",
+        opacity: faint ? 0.5 : 0.85, fillColor: "#7c3aed", fillOpacity: faint ? 0.05 : 0.1
+      };
+    },
+    onEachFeature: function (feature, layer) {
+      layer.bindTooltip(feature.properties.name + " (tentative)", { sticky: true });
+    }
+  });
+
+  tehsilLayer.addTo(map);
+  mouzaLayer.addTo(map);
+
+  document.getElementById("toggleTehsil").addEventListener("change", function (e) {
+    if (e.target.checked) tehsilLayer.addTo(map); else map.removeLayer(tehsilLayer);
+  });
+  document.getElementById("toggleMouzas").addEventListener("change", function (e) {
+    if (e.target.checked) mouzaLayer.addTo(map); else map.removeLayer(mouzaLayer);
+  });
+  document.getElementById("toggleUcs").addEventListener("change", function (e) {
+    if (e.target.checked) ucLayer.addTo(map); else map.removeLayer(ucLayer);
+  });
+
+  // start centered on the tehsil so there's always something useful to see,
+  // even before a GPS fix or without a data connection for tiles
+  try {
+    map.fitBounds(tehsilLayer.getBounds(), { padding: [16, 16] });
+  } catch (e) {
+    map.setView([31.36, 74.40], 12);
+  }
+
+  // ---- previously saved boundaries/points, shown as a reference layer ----
+  var savedLayer = L.layerGroup().addTo(map);
+  function rebuildSavedLayer() {
+    savedLayer.clearLayers();
+    state.boundaries.forEach(function (b) {
+      if (b.points.length < 2) return;
+      var latlngs = b.points.map(function (p) { return [p.lat, p.lon]; });
+      L.polygon(latlngs, { color: "#15803d", weight: 2, fillOpacity: 0.08 })
+        .bindTooltip(b.name, { sticky: true })
+        .addTo(savedLayer);
+    });
+    state.points.forEach(function (p) {
+      L.circleMarker([p.lat, p.lon], { radius: 6, color: "#15803d", weight: 2, fillColor: "#15803d", fillOpacity: 0.9 })
+        .bindTooltip(p.name, { sticky: true })
+        .addTo(savedLayer);
+    });
+  }
+
   // ---- GPS ----
   var gpsDot = document.getElementById("gpsDot");
   var gpsText = document.getElementById("gpsText");
+  var meMarker = null;
+  var meAccuracyCircle = null;
+  var hasCenteredOnFix = false;
 
   function onPosition(pos) {
     lastFix = {
@@ -215,7 +330,21 @@
     var cls = acc <= 15 ? "good" : acc <= 40 ? "fair" : "bad";
     gpsDot.className = "gps-dot " + cls;
     gpsText.textContent = lastFix.lat.toFixed(5) + ", " + lastFix.lon.toFixed(5) + "  ±" + Math.round(acc) + "m";
-    render();
+
+    var ll = [lastFix.lat, lastFix.lon];
+    if (!meMarker) {
+      meMarker = L.circleMarker(ll, { radius: 8, color: "#fff", weight: 2, fillColor: "#2563eb", fillOpacity: 1 }).addTo(map);
+      meAccuracyCircle = L.circle(ll, { radius: acc, color: "#2563eb", weight: 1, fillColor: "#2563eb", fillOpacity: 0.12 }).addTo(map);
+    } else {
+      meMarker.setLatLng(ll);
+      meAccuracyCircle.setLatLng(ll);
+      meAccuracyCircle.setRadius(acc);
+    }
+    if (!hasCenteredOnFix) {
+      hasCenteredOnFix = true;
+      map.setView(ll, 16);
+    }
+    renderDraft();
   }
   function onPositionError(err) {
     gpsDot.className = "gps-dot bad";
@@ -229,85 +358,37 @@
     gpsText.textContent = "no geolocation support";
   }
 
-  // ---- live SVG preview of the current draft boundary ----
-  var svg = document.getElementById("mapSvg");
-  var mapEmpty = document.getElementById("mapEmpty");
-  var VB = 1000, MARGIN = 60;
-
-  function svgEl(tag, attrs) {
-    var el = document.createElementNS("http://www.w3.org/2000/svg", tag);
-    for (var k in attrs) el.setAttribute(k, attrs[k]);
-    return el;
-  }
-
-  function render() {
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
-    var pts = draft.points.slice();
-    var live = lastFix ? [lastFix.lon, lastFix.lat] : null;
-
-    var allForBounds = pts.map(function (p) { return [p.lon, p.lat]; });
-    if (live) allForBounds.push(live);
-
-    if (allForBounds.length === 0) {
-      mapEmpty.style.display = "flex";
-      return;
+  document.getElementById("btnLocate").addEventListener("click", function () {
+    if (lastFix) {
+      map.setView([lastFix.lat, lastFix.lon], 17);
+    } else {
+      toast("Waiting for a GPS fix…");
     }
-    mapEmpty.style.display = "none";
+  });
 
-    var lons = allForBounds.map(function (p) { return p[0]; });
-    var lats = allForBounds.map(function (p) { return p[1]; });
-    var lonMin = Math.min.apply(null, lons), lonMax = Math.max.apply(null, lons);
-    var latMin = Math.min.apply(null, lats), latMax = Math.max.apply(null, lats);
-    if (lonMax - lonMin < 0.0003) { lonMin -= 0.0003; lonMax += 0.0003; }
-    if (latMax - latMin < 0.0003) { latMin -= 0.0003; latMax += 0.0003; }
+  // ---- live draft-boundary trail on the map ----
+  var draftLayer = L.layerGroup().addTo(map);
 
-    var meanLatRad = (latMin + latMax) / 2 * Math.PI / 180;
-    var cosLat = Math.cos(meanLatRad);
-    var lonSpan = (lonMax - lonMin) * cosLat;
-    var latSpan = latMax - latMin;
-    var drawable = VB - MARGIN * 2;
-    var scale = Math.min(drawable / lonSpan, drawable / latSpan);
-    var usedW = lonSpan * scale, usedH = latSpan * scale;
-    var offX = MARGIN + (drawable - usedW) / 2;
-    var offY = MARGIN + (drawable - usedH) / 2;
+  function renderDraft() {
+    draftLayer.clearLayers();
+    var pts = draft.points;
+    if (pts.length === 0) return;
 
-    function toXY(lon, lat) {
-      return [offX + (lon - lonMin) * cosLat * scale, offY + (latMax - lat) * scale];
+    var latlngs = pts.map(function (p) { return [p.lat, p.lon]; });
+    L.polyline(latlngs, { color: "#d97706", weight: 4, lineCap: "round", lineJoin: "round" }).addTo(draftLayer);
+
+    if (pts.length > 2) {
+      L.polyline([latlngs[latlngs.length - 1], latlngs[0]], {
+        color: "#d97706", weight: 2, dashArray: "6 6", opacity: 0.6
+      }).addTo(draftLayer);
     }
 
-    svg.appendChild(svgEl("rect", { x: 0, y: 0, width: VB, height: VB, fill: "var(--surface-2)" }));
-
-    if (pts.length > 0) {
-      var d = pts.map(function (p, i) {
-        var xy = toXY(p.lon, p.lat);
-        return (i === 0 ? "M" : "L") + xy[0].toFixed(1) + "," + xy[1].toFixed(1);
-      }).join(" ");
-      svg.appendChild(svgEl("path", {
-        d: d, fill: "none", stroke: "var(--accent-line)", "stroke-width": 4,
-        "stroke-linecap": "round", "stroke-linejoin": "round"
-      }));
-      pts.forEach(function (p, i) {
-        var xy = toXY(p.lon, p.lat);
-        svg.appendChild(svgEl("circle", { cx: xy[0], cy: xy[1], r: 9, fill: "var(--accent)", stroke: "var(--surface)", "stroke-width": 2 }));
-        var label = svgEl("text", { x: xy[0], y: xy[1] - 14, "text-anchor": "middle", "font-size": 20, "font-family": "monospace", fill: "var(--accent-strong)", "font-weight": "700" });
-        label.textContent = String(i + 1);
-        svg.appendChild(label);
-      });
-      if (pts.length > 2) {
-        var first = toXY(pts[0].lon, pts[0].lat);
-        var last = toXY(pts[pts.length - 1].lon, pts[pts.length - 1].lat);
-        svg.appendChild(svgEl("line", {
-          x1: last[0], y1: last[1], x2: first[0], y2: first[1],
-          stroke: "var(--accent-line)", "stroke-width": 2, "stroke-dasharray": "6 6", opacity: 0.6
-        }));
-      }
-    }
-
-    if (live) {
-      var lxy = toXY(live[0], live[1]);
-      svg.appendChild(svgEl("circle", { cx: lxy[0], cy: lxy[1], r: 22, fill: "var(--ok)", "fill-opacity": 0.25 }));
-      svg.appendChild(svgEl("circle", { cx: lxy[0], cy: lxy[1], r: 9, fill: "var(--ok)", stroke: "var(--surface)", "stroke-width": 2.5 }));
-    }
+    pts.forEach(function (p, i) {
+      L.circleMarker([p.lat, p.lon], {
+        radius: 9, color: "#fff", weight: 2, fillColor: "#f59e0b", fillOpacity: 1
+      }).bindTooltip(String(i + 1), { permanent: true, direction: "top", className: "pt-label", offset: [0, -6] })
+        .addTo(draftLayer);
+    });
   }
 
   // ---- draft boundary controls ----
@@ -319,7 +400,7 @@
     document.getElementById("btnUndo").disabled = draft.points.length === 0;
     document.getElementById("btnFinish").disabled = draft.points.length < 3;
     document.getElementById("btnDiscard").disabled = draft.points.length === 0;
-    render();
+    renderDraft();
   }
 
   document.getElementById("btnAddPoint").addEventListener("click", function () {
@@ -355,6 +436,7 @@
     boundaryNameInput.value = "";
     refreshDraftUI();
     refreshSavedList();
+    rebuildSavedLayer();
     toast("Saved “" + name + "”");
   });
 
@@ -369,6 +451,7 @@
     saveState();
     nameEl.value = "";
     refreshSavedList();
+    rebuildSavedLayer();
     toast("Marked “" + name + "”");
   });
 
@@ -426,6 +509,7 @@
         }
         saveState();
         refreshSavedList();
+        rebuildSavedLayer();
       });
       right.appendChild(badge);
       right.appendChild(delBtn);
@@ -504,6 +588,7 @@
 
   refreshDraftUI();
   refreshSavedList();
+  rebuildSavedLayer();
 })();
 </script>
 </body>
